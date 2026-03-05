@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Live View — Kontrast</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;800&display=swap" rel="stylesheet" />
+<style>
+  /* ── Reset & base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0a0a0a;
+    --surface:   #111111;
+    --border:    #1e1e1e;
+    --accent:    #c8ff00;       /* electric lime — Kontrast brand energy */
+    --accent2:   #ff4d00;       /* ember orange for door tag */
+    --text:      #f0f0f0;
+    --muted:     #555;
+    --card-bg:   #141414;
+    --radius:    4px;
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Page wrapper ── */
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 48px;
+    flex-wrap: wrap;
+  }
+
+  .header-left p {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: rgba(200,255,0,0.07);
+    border: 1px solid rgba(200,255,0,0.18);
+    padding: 8px 14px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 36px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-value {
+    font-family: var(--font-head);
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .stat-divider {
+    width: 1px;
+    background: var(--border);
+    align-self: stretch;
+    margin: 0 4px;
+  }
+
+  /* ── Grid ── */
+  .members-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 2px;
+  }
+
+  /* ── Card ── */
+  .member-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    position: relative;
+    opacity: 0;
+    transform: translateY(16px);
+    animation: cardIn 0.4s ease forwards;
+    cursor: default;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+
+  .member-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    z-index: 1;
+  }
+
+  @keyframes cardIn {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .card-photo {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    object-position: top center;
+    display: block;
+    background: #1a1a1a;
+    filter: grayscale(20%);
+    transition: filter 0.3s;
+  }
+
+  .member-card:hover .card-photo {
+    filter: grayscale(0%);
+  }
+
+  /* Fallback avatar */
+  .card-avatar-fallback {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #1a1a1a 0%, #222 100%);
+    font-family: var(--font-head);
+    font-weight: 800;
+    font-size: 42px;
+    color: var(--muted);
+    letter-spacing: -0.02em;
+    user-select: none;
+  }
+
+  .card-info {
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  .card-name {
+    font-family: var(--font-head);
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: -0.01em;
+  }
+
+  .card-meta {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .card-time {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .card-time::before {
+    content: '';
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .card-door {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent2);
+    background: rgba(255,77,0,0.1);
+    border: 1px solid rgba(255,77,0,0.2);
+    padding: 2px 7px;
+    border-radius: 2px;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    grid-column: 1/-1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px;
+    text-align: center;
+    gap: 12px;
+  }
+
+  .empty-icon {
+    font-size: 48px;
+    filter: grayscale(1);
+    opacity: 0.3;
+  }
+
+  .empty-title {
+    font-family: var(--font-head);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .empty-sub {
+    font-size: 12px;
+    color: #333;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Loading skeleton ── */
+  .skeleton-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 2px;
+  }
+
+  .skeleton-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .skeleton-photo {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: linear-gradient(90deg, #181818 25%, #222 50%, #181818 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+  }
+
+  .skeleton-info {
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .skeleton-line {
+    height: 12px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #181818 25%, #222 50%, #181818 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+  }
+
+  .skeleton-line.short { width: 60%; }
+  .skeleton-line.xshort { width: 40%; height: 10px; }
+
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .footer-note {
+    font-size: 11px;
+    color: #2a2a2a;
+    letter-spacing: 0.06em;
+  }
+
+  #last-update {
+    font-size: 11px;
+    color: #2a2a2a;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Error banner ── */
+  .error-banner {
+    padding: 14px 18px;
+    background: rgba(255,77,0,0.08);
+    border: 1px solid rgba(255,77,0,0.2);
+    color: var(--accent2);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    margin-bottom: 24px;
+    border-radius: var(--radius);
+    display: none;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 480px) {
+    .page { padding: 32px 16px 60px; }
+    .members-grid { grid-template-columns: repeat(2, 1fr); }
+    .skeleton-grid { grid-template-columns: repeat(2, 1fr); }
+    .stat-divider { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <p>Kontrast  · Últimas 3 horas</p>
+    </div>
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      Ao Vivo
+    </div>
+  </header>
+
+  <!-- Stats bar -->
+  <div class="stats-bar">
+    <div class="stat">
+      <span class="stat-value" id="count">—</span>
+      <span class="stat-label">Membros presentes</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-value" id="last-entry-time">—</span>
+      <span class="stat-label">Última entrada</span>
+    </div>
+  </div>
+
+  <!-- Error banner -->
+  <div class="error-banner" id="error-banner">
+    ⚠ Não foi possível atualizar os dados. Tentando novamente em instantes…
+  </div>
+
+  <!-- Members grid (filled by JS) -->
+  <div id="members-container">
+    <!-- Skeleton while loading -->
+    <div class="skeleton-grid" id="skeleton">
+      ${Array(6).fill(`
+        <div class="skeleton-card">
+          <div class="skeleton-photo"></div>
+          <div class="skeleton-info">
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line short"></div>
+            <div class="skeleton-line xshort"></div>
+          </div>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span class="footer-note">Atualiza automaticamente a cada 30 segundos</span>
+    <span id="last-update"></span>
+  </footer>
+
+</div>
+
+<script>
+  // ─────────────────────────────────────────────────────────────────────────
+  // CONFIG — update this URL after deploying to Vercel
+  // ─────────────────────────────────────────────────────────────────────────
+  const API_URL = "https://kontrast-live.vercel.app/api/live";
+  const REFRESH_INTERVAL_MS = 30_000; // 30 seconds
+
+  // ─────────────────────────────────────────────────────────────────────────
+
+  let currentIds = new Set();
+
+  async function fetchMembers() {
+    try {
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      renderMembers(data.members ?? []);
+      document.getElementById("error-banner").style.display = "none";
+      document.getElementById("last-update").textContent =
+        "Atualizado às " + formatTime(new Date());
+    } catch (err) {
+      console.error("Fetch error:", err);
+      document.getElementById("error-banner").style.display = "block";
+    }
+  }
+
+  function renderMembers(members) {
+    const container = document.getElementById("members-container");
+
+    // Remove skeleton on first load
+    const skeleton = document.getElementById("skeleton");
+    if (skeleton) skeleton.remove();
+
+    // Update stats
+    document.getElementById("count").textContent = members.length;
+    if (members.length > 0) {
+      const latest = new Date(members[0].entryTime);
+      document.getElementById("last-entry-time").textContent = formatTime(latest);
+    } else {
+      document.getElementById("last-entry-time").textContent = "—";
+    }
+
+    if (members.length === 0) {
+      container.innerHTML = `
+        <div class="members-grid">
+          <div class="empty-state">
+            <div class="empty-icon">🏠</div>
+            <div class="empty-title">Nenhum membro no espaço</div>
+            <div class="empty-sub">Nas últimas 3 horas não houve entradas registradas</div>
+          </div>
+        </div>`;
+      currentIds = new Set();
+      return;
+    }
+
+    const newIds = new Set(members.map(m => m.id));
+
+    // Decide: full redraw or incremental update
+    const needsFullRedraw =
+      container.querySelector(".members-grid") === null ||
+      currentIds.size === 0;
+
+    if (needsFullRedraw) {
+      const grid = document.createElement("div");
+      grid.className = "members-grid";
+      members.forEach((member, i) => {
+        const card = buildCard(member);
+        card.style.animationDelay = `${i * 40}ms`;
+        grid.appendChild(card);
+      });
+      container.innerHTML = "";
+      container.appendChild(grid);
+    } else {
+      // Add cards for new members
+      const grid = container.querySelector(".members-grid");
+
+      // Remove cards for members no longer in the house
+      currentIds.forEach(id => {
+        if (!newIds.has(id)) {
+          const el = grid.querySelector(`[data-id="${id}"]`);
+          if (el) {
+            el.style.opacity = "0";
+            el.style.transform = "scale(0.95)";
+            el.style.transition = "opacity 0.3s, transform 0.3s";
+            setTimeout(() => el.remove(), 350);
+          }
+        }
+      });
+
+      // Add new ones
+      newIds.forEach(id => {
+        if (!currentIds.has(id)) {
+          const member = members.find(m => m.id === id);
+          if (member) {
+            const card = buildCard(member);
+            grid.prepend(card);
+          }
+        }
+      });
+    }
+
+    currentIds = newIds;
+  }
+
+  function buildCard(member) {
+    const card = document.createElement("div");
+    card.className = "member-card";
+    card.dataset.id = member.id;
+
+    const initials = getInitials(member.name);
+    const timeStr = formatTime(new Date(member.entryTime));
+    const dateStr = formatDate(new Date(member.entryTime));
+
+    const photoHtml = member.photo
+      ? `<img class="card-photo"
+              src="${escHtml(member.photo)}"
+              alt="${escHtml(member.name)}"
+              loading="lazy"
+              onerror="this.parentElement.innerHTML='<div class=\\'card-avatar-fallback\\'>${escHtml(initials)}</div>'" />`
+      : `<div class="card-avatar-fallback">${escHtml(initials)}</div>`;
+
+    card.innerHTML = `
+      ${photoHtml}
+      <div class="card-info">
+        <div class="card-name" title="${escHtml(member.name)}">${escHtml(member.name)}</div>
+        <div class="card-meta">
+          <div class="card-time">${dateStr} · ${timeStr}</div>
+          <div class="card-door">${escHtml(member.door)}</div>
+        </div>
+      </div>`;
+
+    return card;
+  }
+
+  // ─── Formatting helpers ───────────────────────────────────────────────────
+
+  function formatTime(date) {
+    return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function formatDate(date) {
+    const today = new Date();
+    const isToday =
+      date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear();
+    return isToday
+      ? "Hoje"
+      : date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+  }
+
+  function getInitials(name) {
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(w => w[0].toUpperCase())
+      .join("");
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // ─── Init ────────────────────────────────────────────────────────────────
+
+  fetchMembers();
+  setInterval(fetchMembers, REFRESH_INTERVAL_MS);
+</script>
+
+</body>
+</html>
