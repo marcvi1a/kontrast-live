@@ -42,7 +42,6 @@ async function login() {
     throw new Error(`Login failed ${res.status}: ${text}`);
   }
   const data = await res.json();
-  // iDSecure wraps response: { success, message, data: { token, ... } }
   const token = data?.data?.token ?? data.token ?? data.accessToken ?? data.jwt;
   if (!token) throw new Error(`No token in login response: ${JSON.stringify(data)}`);
   return token;
@@ -50,72 +49,56 @@ async function login() {
 
 // ─── Step 2: Fetch access logs from last 3 hours ──────────────────────────────
 async function getMembersInHouse(token) {
-  // iDSecure expects "YYYY-MM-DD HH:MM:SS" without timezone suffix
-  const fmt = (d) => d.toISOString().replace("T", " ").substring(0, 19);
-  const startDate = fmt(new Date(Date.now() - 3 * 60 * 60 * 1000));
-  const endDate   = fmt(new Date());
+  // API expects Unix timestamps in seconds (as float/double)
+  const dtEnd   = Date.now() / 1000;
+  const dtStart = dtEnd - (3 * 60 * 60);
 
-  const qs = `startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&page=1&pageSize=500`;
+  const params = new URLSearchParams({
+    pageSize:    "500",
+    pageNumber:  "1",
+    sortField:   "Time",
+    sortOrder:   "desc",
+    dtStart:     dtStart.toFixed(0),
+    dtEnd:       dtEnd.toFixed(0),
+    getPhotos:   "true",
+    ignoreCount: "true",
+  });
 
-  // Try /accesslog/logs first, fall back to /accesslog/persons
-  let logs = [];
-  try {
-    const res = await apiFetch(token, `/accesslog/logs?${qs}`);
-    logs = Array.isArray(res) ? res : (res.logs ?? res.data ?? res.records ?? res.items ?? []);
-  } catch (err) {
-    console.warn("accesslog/logs failed, trying accesslog/persons:", err.message);
-    const res = await apiFetch(token, `/accesslog/persons?${qs}`);
-    logs = Array.isArray(res) ? res : (res.logs ?? res.data ?? res.records ?? res.items ?? []);
-  }
+  const res = await apiFetch(token, `/accesslog/logs?${params}`);
+
+  // Response is wrapped: { success, data: { records: [...], ... } } or similar
+  const raw = res?.data ?? res;
+  const logs = Array.isArray(raw)
+    ? raw
+    : (raw?.records ?? raw?.logs ?? raw?.items ?? raw?.list ?? []);
 
   if (logs.length === 0) return [];
 
-  // Filter: only granted/access-allowed events — exclude explicit denials
-  const granted = logs.filter(log => {
-    const evt = log.event ?? log.eventType ?? log.type ?? "";
-    const denied = ["denied", "blocked", "refused", "negado", 0, "0"];
-    return !denied.includes(evt) && !denied.includes(String(evt).toLowerCase());
-  });
-
-  // Deduplicate: one card per person, most recent entry only
+  // Deduplicate: one entry per person, most recent only
   const latestByPerson = new Map();
-  for (const log of granted) {
-    const pid = log.personId ?? log.person_id ?? log.id_person ?? log.userId ?? log.user_id;
+  for (const log of logs) {
+    const pid = log.personId ?? log.person_id ?? log.id_person ?? log.userId;
     if (pid && !latestByPerson.has(pid)) {
       latestByPerson.set(pid, log);
     }
   }
 
-  // Build member objects
-  const members = await Promise.all(
-    [...latestByPerson.entries()].map(async ([pid, log]) => {
-      const photo = await getPhoto(token, pid);
-      return {
-        id: pid,
-        name: log.personName ?? log.person_name ?? log.name ?? log.userName ?? "Unknown",
-        photo,
-        entryTime: log.dateTime ?? log.date_time ?? log.timestamp ?? log.createdAt ?? log.date,
-        door: log.doorName ?? log.door_name ?? log.readerName ?? log.reader_name ?? log.portal ?? `Porta ${pid}`,
-      };
-    })
-  );
+  const members = [...latestByPerson.entries()].map(([pid, log]) => {
+    // Photo may come inline as base64 when getPhotos=true
+    let photo = null;
+    const b64 = log.photo ?? log.image ?? log.personPhoto ?? log.picture;
+    if (b64) photo = `data:image/jpeg;base64,${b64}`;
+
+    return {
+      id: pid,
+      name: log.personName ?? log.person_name ?? log.name ?? log.userName ?? "Unknown",
+      photo,
+      entryTime: log.time ?? log.dateTime ?? log.date_time ?? log.timestamp ?? log.createdAt,
+      door: log.deviceName ?? log.device_name ?? log.doorName ?? log.door_name ?? log.readerName ?? `Porta ${pid}`,
+    };
+  });
 
   return members.sort((a, b) => new Date(b.entryTime) - new Date(a.entryTime));
-}
-
-// ─── Photo fetch ──────────────────────────────────────────────────────────────
-async function getPhoto(token, personId) {
-  try {
-    const res = await apiFetch(token, `/persons/${personId}/photo`);
-    if (res?.base64 || res?.image || res?.photo) {
-      const b64 = res.base64 ?? res.image ?? res.photo;
-      return `data:image/jpeg;base64,${b64}`;
-    }
-    if (res?.url) return res.url;
-  } catch {
-    // No photo — fallback avatar shown in frontend
-  }
-  return null;
 }
 
 // ─── HTTP helper ──────────────────────────────────────────────────────────────
