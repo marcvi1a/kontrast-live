@@ -24,19 +24,55 @@ export default async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // ?raw=1 — inspect actual field names from actualLocation
-  if (req.query.raw === "1") {
+  // ?probe=1 — test all candidate endpoints
+  if (req.query.probe === "1") {
     try {
       const loginData = await doLogin();
       const token = loginData?.data?.token;
-      const r = await fetch(
-        `${BASE}/reports/actualLocation?pageSize=3&pageNumber=1&sortField=EnteredAt&sortOrder=desc`,
-        { headers: { "Authorization": `Bearer ${token}` } }
-      );
-      const body = await r.json();
-      // Return the raw first record so we can see all field names
-      const record = body?.data?.data?.[0] ?? body?.data?.[0] ?? body?.[0] ?? body;
-      return res.status(200).json({ raw_keys: Object.keys(record ?? {}), sample: record });
+      const auth = { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
+      const now = Math.floor(Date.now() / 1000);
+
+      const tests = [
+        { label: "accesslog/last",
+          url: `${BASE}/accesslog/last` },
+        { label: "accesslog/last?pageSize=3",
+          url: `${BASE}/accesslog/last?pageSize=3&pageNumber=1` },
+        { label: "accesslog/logs (no params)",
+          url: `${BASE}/accesslog/logs?pageSize=3&pageNumber=1&sortField=Time&sortOrder=desc&ignoreCount=true` },
+        { label: "accesslog/logs (with dates)",
+          url: `${BASE}/accesslog/logs?pageSize=3&pageNumber=1&sortField=Time&sortOrder=desc&dtStart=${now-14400}&dtEnd=${now}&ignoreCount=true` },
+        { label: "accesslog/persons",
+          url: `${BASE}/accesslog/persons?pageSize=3&pageNumber=1&sortField=Name&sortOrder=asc` },
+        { label: "accesslog/visitors",
+          url: `${BASE}/accesslog/visitors?pageSize=3&pageNumber=1` },
+        { label: "dashboard/last",
+          url: `${BASE}/dashboard/last` },
+        { label: "dashboard/last?pageSize=3",
+          url: `${BASE}/dashboard/last?pageSize=3&pageNumber=1` },
+        { label: "reports/actualLocation (current)",
+          url: `${BASE}/reports/actualLocation?pageSize=3&pageNumber=1&sortField=EnteredAt&sortOrder=desc` },
+      ];
+
+      const results = await Promise.all(tests.map(async (t) => {
+        try {
+          const r = await fetch(t.url, { headers: auth });
+          const txt = await r.text();
+          let parsed = null;
+          try { parsed = JSON.parse(txt); } catch {}
+          // Show keys of first record if available
+          const firstRecord = parsed?.data?.data?.[0] ?? parsed?.data?.[0] ?? (Array.isArray(parsed) ? parsed[0] : null);
+          return {
+            label: t.label,
+            status: r.status,
+            keys: firstRecord ? Object.keys(firstRecord) : null,
+            sample: firstRecord ?? txt.slice(0, 300),
+          };
+        } catch (err) {
+          return { label: t.label, status: "error", sample: err.message };
+        }
+      }));
+
+      return res.status(200).json({ results });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
