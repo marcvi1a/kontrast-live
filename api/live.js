@@ -1,155 +1,134 @@
 // api/live.js — Vercel Serverless Function
-// Proxies Control iD / iDSecure access logs and returns members in the last 3 hours
+// Uses iDSecure REST API v1: https://main.idsecure.com.br:5000/api/v1
 
-const IDSECURE_BASE = process.env.IDSECURE_BASE_URL; // e.g. https://main.idsecure.com.br:5000
-const IDSECURE_TOKEN = process.env.IDSECURE_API_TOKEN; // Bearer token from iDSecure
+const BASE = "https://main.idsecure.com.br:5000/api/v1";
+const EMAIL = process.env.IDSECURE_EMAIL;
+const PASSWORD = process.env.IDSECURE_PASSWORD;
 
-// ─── CORS helper ────────────────────────────────────────────────────────────
+// ─── CORS ────────────────────────────────────────────────────────────────────
 function setCors(res) {
-  // Allow only your Shopify domain in production
   const allowed = process.env.ALLOWED_ORIGIN || "https://kontrast.com.br";
   res.setHeader("Access-Control-Allow-Origin", allowed);
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
-// ─── Main handler ────────────────────────────────────────────────────────────
+// ─── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   setCors(res);
-
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const members = await getMembersInHouse();
+    const token = await login();
+    const members = await getMembersInHouse(token);
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
     return res.status(200).json({ members, updatedAt: new Date().toISOString() });
   } catch (err) {
-    console.error("Error fetching members:", err);
+    console.error("Error:", err);
     return res.status(500).json({ error: "Failed to fetch members", detail: err.message });
   }
 }
 
-// ─── Core logic ──────────────────────────────────────────────────────────────
-async function getMembersInHouse() {
-  const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
-
-  // 1. Fetch access log events from the last 3 hours
-  //    iDSecure uses the same REST pattern as Control iD:
-  //    POST /load_objects with object name + filter conditions
-  const logsResponse = await fetchIDSecure("/load_objects", {
-    object: "access_logs",
-    where: {
-      conditions: [
-        {
-          // Only granted (door-opened) events
-          "access_logs.event": { condition: "=", value: 7 },
-        },
-        {
-          "access_logs.date_time": {
-            condition: ">=",
-            value: threeHoursAgo,
-          },
-        },
-      ],
-      operator: "and",
-    },
-    order: [{ "access_logs.date_time": "desc" }],
-    limit: 500,
+// ─── Step 1: Login and get JWT ────────────────────────────────────────────────
+async function login() {
+  const res = await fetch(`${BASE}/operators/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
   });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Login failed ${res.status}: ${text}`);
+  }
+  const data = await res.json();
+  // JWT is typically at data.token or data.accessToken or data.jwt
+  const token = data.token ?? data.accessToken ?? data.jwt ?? data.access_token;
+  if (!token) throw new Error(`No token in login response: ${JSON.stringify(data)}`);
+  return token;
+}
 
-  const logs = logsResponse?.access_logs ?? [];
+// ─── Step 2: Fetch access logs from last 3 hours ──────────────────────────────
+async function getMembersInHouse(token) {
+  const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  const now = new Date().toISOString();
+
+  // Try /accesslog/logs first, fall back to /accesslog/persons
+  let logs = [];
+  try {
+    const res = await apiFetch(token, `/accesslog/logs?startDate=${threeHoursAgo}&endDate=${now}&limit=500`);
+    // Response may be array directly or wrapped: { logs: [...] } or { data: [...] }
+    logs = Array.isArray(res) ? res : (res.logs ?? res.data ?? res.records ?? []);
+  } catch (err) {
+    console.warn("accesslog/logs failed, trying accesslog/persons:", err.message);
+    const res = await apiFetch(token, `/accesslog/persons?startDate=${threeHoursAgo}&endDate=${now}&limit=500`);
+    logs = Array.isArray(res) ? res : (res.logs ?? res.data ?? res.records ?? []);
+  }
 
   if (logs.length === 0) return [];
 
-  // 2. Deduplicate: keep only the LAST entry per user (most recent door event)
-  const latestByUser = new Map();
-  for (const log of logs) {
-    const uid = log.id_person;
-    if (uid && !latestByUser.has(uid)) {
-      latestByUser.set(uid, log);
+  // Filter: only granted/access-allowed events
+  // Common event type values: "access", "granted", 1, 7 — keep all if unsure
+  const granted = logs.filter(log => {
+    const evt = log.event ?? log.eventType ?? log.type ?? "";
+    // Accept everything that isn't explicitly a denial
+    const denied = ["denied", "blocked", "refused", "negado", 0, "0"];
+    return !denied.includes(evt) && !denied.includes(String(evt).toLowerCase());
+  });
+
+  // Deduplicate: one card per person, most recent entry only
+  const latestByPerson = new Map();
+  for (const log of granted) {
+    const pid = log.personId ?? log.person_id ?? log.id_person ?? log.userId ?? log.user_id;
+    if (pid && !latestByPerson.has(pid)) {
+      latestByPerson.set(pid, log);
     }
   }
 
-  // 3. Fetch user details + photos for each unique member
-  const userIds = [...latestByUser.keys()];
+  // Build member objects
   const members = await Promise.all(
-    userIds.map(async (uid) => {
-      const log = latestByUser.get(uid);
-      try {
-        const person = await getPersonById(uid);
-        const photoUrl = await getPersonPhotoUrl(uid);
-        return {
-          id: uid,
-          name: person?.name ?? "Unknown",
-          photo: photoUrl,
-          entryTime: log.date_time,
-          door: log.door_name ?? log.portal_name ?? `Door ${log.id_portal}`,
-        };
-      } catch {
-        return {
-          id: uid,
-          name: log.person_name ?? "Unknown",
-          photo: null,
-          entryTime: log.date_time,
-          door: log.door_name ?? `Door ${log.id_portal}`,
-        };
-      }
+    [...latestByPerson.entries()].map(async ([pid, log]) => {
+      const photo = await getPhoto(token, pid);
+      return {
+        id: pid,
+        name: log.personName ?? log.person_name ?? log.name ?? log.userName ?? "Unknown",
+        photo,
+        entryTime: log.dateTime ?? log.date_time ?? log.timestamp ?? log.createdAt ?? log.date,
+        door: log.doorName ?? log.door_name ?? log.readerName ?? log.reader_name ?? log.portal ?? `Porta ${pid}`,
+      };
     })
   );
 
-  // Sort by most recent entry first
   return members.sort((a, b) => new Date(b.entryTime) - new Date(a.entryTime));
 }
 
-async function getPersonById(personId) {
-  const result = await fetchIDSecure("/load_objects", {
-    object: "persons",
-    where: {
-      conditions: [{ "persons.id": { condition: "=", value: personId } }],
-    },
-    limit: 1,
-  });
-  return result?.persons?.[0] ?? null;
-}
-
-async function getPersonPhotoUrl(personId) {
-  // iDSecure / Control iD exposes photos via a dedicated endpoint
-  // Returns a signed URL or base64 depending on version
+// ─── Photo fetch ──────────────────────────────────────────────────────────────
+async function getPhoto(token, personId) {
   try {
-    const result = await fetchIDSecure(`/get_user_image?id=${personId}`, null, "GET");
-    if (result?.image) {
-      // Some versions return base64 directly
-      return `data:image/jpeg;base64,${result.image}`;
+    const res = await apiFetch(token, `/persons/${personId}/photo`);
+    if (res?.base64 ?? res?.image ?? res?.photo) {
+      const b64 = res.base64 ?? res.image ?? res.photo;
+      return `data:image/jpeg;base64,${b64}`;
     }
-    // Others return a URL path — build absolute URL
-    if (result?.url) {
-      return `${IDSECURE_BASE}${result.url}`;
-    }
+    if (res?.url) return res.url;
   } catch {
-    // Photo not available — will show fallback avatar
+    // No photo — fallback avatar shown in frontend
   }
   return null;
 }
 
-// ─── iDSecure HTTP helper ────────────────────────────────────────────────────
-async function fetchIDSecure(path, body, method = "POST") {
-  const url = `${IDSECURE_BASE}${path}`;
-  const options = {
-    method,
+// ─── HTTP helper ──────────────────────────────────────────────────────────────
+async function apiFetch(token, path) {
+  const url = `${BASE}${path}`;
+  const res = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${IDSECURE_TOKEN}`,
+      Authorization: `Bearer ${token}`,
     },
-  };
-  if (body && method !== "GET") {
-    options.body = JSON.stringify(body);
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`iDSecure ${res.status} on ${path}: ${text}`);
   }
-
-  const response = await fetch(url, options);
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`iDSecure API error ${response.status}: ${text}`);
-  }
-  return response.json();
+  return res.json();
 }
