@@ -71,9 +71,9 @@ async function getMembersInHouse(token) {
 
   if (!locs.length) return [];
 
-  // totalTime is in minutes. Show only people who entered in the last 3 hours.
-  // Ghost records have totalTime in the thousands (never checked out).
-  const MAX_MINUTES = 180;
+  // Return all members with reasonable totalTime (cap at 24h to exclude ghost records)
+  // Client-side JS applies the user's selected time filter
+  const MAX_MINUTES = 24 * 60;
   const today = locs.filter(l =>
     l.personId &&
     l.personName &&
