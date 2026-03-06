@@ -4,7 +4,7 @@ const EMAIL    = process.env.IDSECURE_EMAIL;
 const PASSWORD = process.env.IDSECURE_PASSWORD;
 
 function setCors(res) {
-  const allowed = process.env.ALLOWED_ORIGIN || "https://kontrast.com.br";
+  const allowed = process.env.ALLOWED_ORIGIN || "https://live.kontrast.com.br";
   res.setHeader("Access-Control-Allow-Origin", allowed);
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
