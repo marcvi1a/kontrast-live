@@ -1,5 +1,4 @@
 // api/live.js — Vercel Serverless Function
-// Uses /reports/actualLocation — who is currently inside right now
 const BASE     = "https://main.idsecure.com.br:5000/api/v1";
 const EMAIL    = process.env.IDSECURE_EMAIL;
 const PASSWORD = process.env.IDSECURE_PASSWORD;
@@ -25,6 +24,24 @@ export default async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
+  // ?raw=1 — inspect actual field names from actualLocation
+  if (req.query.raw === "1") {
+    try {
+      const loginData = await doLogin();
+      const token = loginData?.data?.token;
+      const r = await fetch(
+        `${BASE}/reports/actualLocation?pageSize=3&pageNumber=1&sortField=EnteredAt&sortOrder=desc`,
+        { headers: { "Authorization": `Bearer ${token}` } }
+      );
+      const body = await r.json();
+      // Return the raw first record so we can see all field names
+      const record = body?.data?.data?.[0] ?? body?.data?.[0] ?? body?.[0] ?? body;
+      return res.status(200).json({ raw_keys: Object.keys(record ?? {}), sample: record });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   try {
     const loginData = await doLogin();
     const token = loginData?.data?.token;
@@ -39,38 +56,45 @@ export default async function handler(req, res) {
 }
 
 async function getMembersInHouse(token) {
-  // /reports/actualLocation returns who is physically inside right now
-  const params = new URLSearchParams({
-    pageSize:   "500",
-    pageNumber: "1",
-    sortField:  "EnteredAt",
-    sortOrder:  "desc",
-  });
+  const authHdr = { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
 
-  const r = await fetch(`${BASE}/reports/actualLocation?${params}`, {
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type":  "application/json",
-    },
-  });
-  if (!r.ok) throw new Error(`iDSecure ${r.status} on /reports/actualLocation: ${await r.text()}`);
+  const r = await fetch(
+    `${BASE}/reports/actualLocation?pageSize=500&pageNumber=1&sortField=EnteredAt&sortOrder=desc`,
+    { headers: authHdr }
+  );
+  if (!r.ok) throw new Error(`iDSecure ${r.status}: ${await r.text()}`);
 
   const body = await r.json();
   const locs = Array.isArray(body) ? body
              : Array.isArray(body?.data) ? body.data
              : (body?.data?.data ?? []);
 
-  // Filter to real people only (personType 1 = Person, exclude visitors/operators if needed)
-  return locs
-    .filter(l => l.personId && l.personName)
-    .map(l => ({
+  if (!locs.length) return [];
+
+  // totalTime is in minutes. Show only people who entered in the last 3 hours.
+  // Ghost records have totalTime in the thousands (never checked out).
+  const MAX_MINUTES = 180;
+  const today = locs.filter(l =>
+    l.personId &&
+    l.personName &&
+    typeof l.totalTime === "number" &&
+    l.totalTime <= MAX_MINUTES
+  );
+
+  return today.map(l => {
+    // totalTime is minutes inside — compute approximate entry time
+    const entryTime = l.totalTime != null
+      ? new Date(Date.now() - l.totalTime * 60 * 1000).toISOString()
+      : null;
+
+    return {
       id:        l.personId,
       name:      l.personName,
-      photo:     l.personAvatar ? `data:image/jpeg;base64,${l.personAvatar}` : null,
-      entryTime: l.enteredAt ?? null,
+      photo:     null, // fetched separately if needed
+      entryTime,
       area:      l.areaName ?? "—",
       role:      l.professionalRole ?? null,
-      company:   l.companyDescription || null,
-      totalTime: l.totalTime ?? null,   // minutes inside
-    }));
+      totalTime: l.totalTime,
+    };
+  });
 }
