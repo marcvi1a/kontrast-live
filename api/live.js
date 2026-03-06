@@ -50,28 +50,29 @@ async function login() {
 
 // ─── Step 2: Fetch access logs from last 3 hours ──────────────────────────────
 async function getMembersInHouse(token) {
-  const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
-  const now = new Date().toISOString();
+  // iDSecure expects "YYYY-MM-DD HH:MM:SS" without timezone suffix
+  const fmt = (d) => d.toISOString().replace("T", " ").substring(0, 19);
+  const startDate = fmt(new Date(Date.now() - 3 * 60 * 60 * 1000));
+  const endDate   = fmt(new Date());
+
+  const qs = `startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&page=1&pageSize=500`;
 
   // Try /accesslog/logs first, fall back to /accesslog/persons
   let logs = [];
   try {
-    const res = await apiFetch(token, `/accesslog/logs?startDate=${threeHoursAgo}&endDate=${now}&limit=500`);
-    // Response may be array directly or wrapped: { logs: [...] } or { data: [...] }
-    logs = Array.isArray(res) ? res : (res.logs ?? res.data ?? res.records ?? []);
+    const res = await apiFetch(token, `/accesslog/logs?${qs}`);
+    logs = Array.isArray(res) ? res : (res.logs ?? res.data ?? res.records ?? res.items ?? []);
   } catch (err) {
     console.warn("accesslog/logs failed, trying accesslog/persons:", err.message);
-    const res = await apiFetch(token, `/accesslog/persons?startDate=${threeHoursAgo}&endDate=${now}&limit=500`);
-    logs = Array.isArray(res) ? res : (res.logs ?? res.data ?? res.records ?? []);
+    const res = await apiFetch(token, `/accesslog/persons?${qs}`);
+    logs = Array.isArray(res) ? res : (res.logs ?? res.data ?? res.records ?? res.items ?? []);
   }
 
   if (logs.length === 0) return [];
 
-  // Filter: only granted/access-allowed events
-  // Common event type values: "access", "granted", 1, 7 — keep all if unsure
+  // Filter: only granted/access-allowed events — exclude explicit denials
   const granted = logs.filter(log => {
     const evt = log.event ?? log.eventType ?? log.type ?? "";
-    // Accept everything that isn't explicitly a denial
     const denied = ["denied", "blocked", "refused", "negado", 0, "0"];
     return !denied.includes(evt) && !denied.includes(String(evt).toLowerCase());
   });
@@ -106,7 +107,7 @@ async function getMembersInHouse(token) {
 async function getPhoto(token, personId) {
   try {
     const res = await apiFetch(token, `/persons/${personId}/photo`);
-    if (res?.base64 ?? res?.image ?? res?.photo) {
+    if (res?.base64 || res?.image || res?.photo) {
       const b64 = res.base64 ?? res.image ?? res.photo;
       return `data:image/jpeg;base64,${b64}`;
     }
