@@ -42,8 +42,8 @@ async function login() {
     throw new Error(`Login failed ${res.status}: ${text}`);
   }
   const data = await res.json();
-  // JWT is typically at data.token or data.accessToken or data.jwt
-  const token = data.token ?? data.accessToken ?? data.jwt ?? data.access_token;
+  // iDSecure wraps response: { success, message, data: { token, ... } }
+  const token = data?.data?.token ?? data.token ?? data.accessToken ?? data.jwt;
   if (!token) throw new Error(`No token in login response: ${JSON.stringify(data)}`);
   return token;
 }
