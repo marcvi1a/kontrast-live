@@ -20,8 +20,8 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const token = await login();
-    const members = await getMembersInHouse(token);
+    const { token, tenantId } = await login();
+    const members = await getMembersInHouse(token, tenantId);
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
     return res.status(200).json({ members, updatedAt: new Date().toISOString() });
   } catch (err) {
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   }
 }
 
-// ─── Step 1: Login and get JWT ────────────────────────────────────────────────
+// ─── Step 1: Login and get JWT + tenantId ────────────────────────────────────
 async function login() {
   const res = await fetch(`${BASE}/operators/login`, {
     method: "POST",
@@ -42,19 +42,17 @@ async function login() {
     throw new Error(`Login failed ${res.status}: ${text}`);
   }
   const data = await res.json();
-  const token = data?.data?.token;
+  const token    = data?.data?.token;
+  const tenantId = data?.data?.tenantId;
   if (!token) throw new Error(`No token in login response: ${JSON.stringify(data)}`);
-  return token;
+  return { token, tenantId };
 }
 
 // ─── Step 2: Fetch access logs from last 3 hours ──────────────────────────────
-async function getMembersInHouse(token) {
-  // Unix timestamps in seconds
+async function getMembersInHouse(token, tenantId) {
   const dtEnd   = Math.floor(Date.now() / 1000);
   const dtStart = dtEnd - (3 * 60 * 60);
 
-  // Granted access events in iDSecure: "Access" is the standard event string
-  // We pass the events filter to only get granted entries (event type 1 = Access)
   const params = new URLSearchParams({
     pageSize:    "500",
     pageNumber:  "1",
@@ -66,19 +64,17 @@ async function getMembersInHouse(token) {
     ignoreCount: "true",
   });
 
-  const res = await apiFetch(token, `/accesslog/logs?${params}`);
-
-  // Response schema: { data: [ { personId, personName, time, deviceName, event, personAvatar, ... } ] }
+  const res = await apiFetch(token, tenantId, `/accesslog/logs?${params}`);
   const logs = Array.isArray(res) ? res : (res?.data ?? []);
 
   if (logs.length === 0) return [];
 
-  // Filter: keep only granted access events, exclude denials
+  // Exclude denied/invalid events
   const DENIED_EVENTS = ["AccessDenied", "InvalidCard", "InvalidDevice", "Blocked",
                          "InvalidSchedule", "AntiPassback", "ExceptionList"];
   const granted = logs.filter(log => !DENIED_EVENTS.includes(log.event));
 
-  // Deduplicate: one card per person, most recent entry only
+  // One card per person, most recent entry only
   const latestByPerson = new Map();
   for (const log of granted) {
     const pid = log.personId;
@@ -87,33 +83,32 @@ async function getMembersInHouse(token) {
     }
   }
 
-  const members = [...latestByPerson.values()].map(log => {
-    // personAvatar comes as base64 string when getPhotos=true
-    const photo = log.personAvatar
-      ? `data:image/jpeg;base64,${log.personAvatar}`
-      : null;
-
-    return {
-      id:        log.personId,
-      name:      log.personName ?? "Unknown",
-      photo,
-      entryTime: log.time,
-      door:      log.deviceName ?? log.areaName ?? "—",
-    };
-  });
+  const members = [...latestByPerson.values()].map(log => ({
+    id:        log.personId,
+    name:      log.personName ?? "Unknown",
+    photo:     log.personAvatar ? `data:image/jpeg;base64,${log.personAvatar}` : null,
+    entryTime: log.time,
+    door:      log.deviceName ?? log.areaName ?? "—",
+  }));
 
   return members.sort((a, b) => new Date(b.entryTime) - new Date(a.entryTime));
 }
 
 // ─── HTTP helper ──────────────────────────────────────────────────────────────
-async function apiFetch(token, path) {
+async function apiFetch(token, tenantId, path) {
   const url = `${BASE}${path}`;
-  const res = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      Authorization:  `Bearer ${token}`,
-    },
-  });
+  const headers = {
+    "Content-Type":  "application/json",
+    "Authorization": `Bearer ${token}`,
+  };
+
+  // iDSecure cloud requires tenantId on all requests after login
+  if (tenantId) {
+    headers["TenantId"]  = String(tenantId);
+    headers["X-TenantId"] = String(tenantId);  // try both common variants
+  }
+
+  const res = await fetch(url, { headers });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`iDSecure ${res.status} on ${path}: ${text}`);
