@@ -456,12 +456,15 @@
   <div id="members-container">
     <!-- Skeleton while loading -->
     <div class="skeleton-grid" id="skeleton">
-      <div class="skeleton-card"><div class="skeleton-photo"></div><div class="skeleton-info"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line xshort"></div></div></div>
-      <div class="skeleton-card"><div class="skeleton-photo"></div><div class="skeleton-info"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line xshort"></div></div></div>
-      <div class="skeleton-card"><div class="skeleton-photo"></div><div class="skeleton-info"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line xshort"></div></div></div>
-      <div class="skeleton-card"><div class="skeleton-photo"></div><div class="skeleton-info"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line xshort"></div></div></div>
-      <div class="skeleton-card"><div class="skeleton-photo"></div><div class="skeleton-info"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line xshort"></div></div></div>
-      <div class="skeleton-card"><div class="skeleton-photo"></div><div class="skeleton-info"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line xshort"></div></div></div>
+      ${Array(6).fill(`
+        <div class="skeleton-card">
+          <div class="skeleton-photo"></div>
+          <div class="skeleton-info">
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line short"></div>
+            <div class="skeleton-line xshort"></div>
+          </div>
+        </div>`).join('')}
     </div>
   </div>
 
@@ -510,46 +513,47 @@
       const res = await fetch(API_URL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const filtered = filterByTime(data.members ?? []);
-      renderMembers(filtered);
+      // fetchedAt is the UTC epoch ms when the server captured totalTime values
+      const fetchedAt = data.fetchedAt ?? Date.now();
+      const filtered = filterByTime(data.members ?? [], fetchedAt);
+      renderMembers(filtered, fetchedAt);
       document.getElementById("error-banner").style.display = "none";
       document.getElementById("last-update").textContent =
-        "Atualizado às " + formatTime(new Date());
+        "Atualizado às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     } catch (err) {
       console.error("Fetch error:", err);
       document.getElementById("error-banner").style.display = "block";
     }
   }
 
-  function filterByTime(members) {
+  function filterByTime(members, fetchedAt) {
     if (activeMinutes === "today") {
       const startOfDay = new Date();
       startOfDay.setHours(0, 1, 0, 0);
-      const minutesSinceMidnight = (Date.now() - startOfDay.getTime()) / 60000;
+      const minutesSinceMidnight = (fetchedAt - startOfDay.getTime()) / 60000;
       return members.filter(m => m.totalTime != null && m.totalTime <= minutesSinceMidnight);
     }
     if (activeMinutes === "7days") {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       sevenDaysAgo.setHours(0, 1, 0, 0);
-      const minutesSince7Days = (Date.now() - sevenDaysAgo.getTime()) / 60000;
+      const minutesSince7Days = (fetchedAt - sevenDaysAgo.getTime()) / 60000;
       return members.filter(m => m.totalTime != null && m.totalTime <= minutesSince7Days);
     }
     return members.filter(m => m.totalTime != null && m.totalTime <= activeMinutes);
   }
 
-  function renderMembers(members) {
+  function renderMembers(members, fetchedAt) {
     const container = document.getElementById("members-container");
 
     // Remove skeleton on first load
     const skeleton = document.getElementById("skeleton");
     if (skeleton) skeleton.remove();
 
-    // Update stats
+    // Update stats — members[0] has the smallest totalTime (most recent entry)
     document.getElementById("count").textContent = members.length;
     if (members.length > 0) {
-      const latest = new Date(members[0].entryTime);
-      document.getElementById("last-entry-time").textContent = formatTime(latest);
+      document.getElementById("last-entry-time").textContent = totalTimeToClockTime(members[0].totalTime, fetchedAt);
     } else {
       document.getElementById("last-entry-time").textContent = "—";
     }
@@ -577,7 +581,7 @@
       const grid = document.createElement("div");
       grid.className = "members-grid";
       members.forEach((member, i) => {
-        const card = buildCard(member);
+        const card = buildCard(member, fetchedAt);
         card.style.animationDelay = `${i * 40}ms`;
         grid.appendChild(card);
       });
@@ -605,7 +609,7 @@
         if (!currentIds.has(id)) {
           const member = members.find(m => m.id === id);
           if (member) {
-            const card = buildCard(member);
+            const card = buildCard(member, fetchedAt);
             grid.prepend(card);
           }
         }
@@ -615,14 +619,13 @@
     currentIds = newIds;
   }
 
-  function buildCard(member) {
+  function buildCard(member, fetchedAt) {
     const card = document.createElement("div");
     card.className = "member-card";
     card.dataset.id = member.id;
 
     const initials = getInitials(member.name);
-    const timeStr = formatTime(new Date(member.entryTime));
-    const dateStr = formatDate(new Date(member.entryTime));
+    const timeStr = totalTimeToClockTime(member.totalTime, fetchedAt);
 
     const fallbackHtml = '<div class="card-avatar-fallback">' + escHtml(initials) + '</div>';
     const photoHtml = member.photo
@@ -639,7 +642,7 @@
       '<div class="card-info">' +
         '<div class="card-name" title="' + escHtml(member.name) + '">' + escHtml(member.name) + '</div>' +
         '<div class="card-meta">' +
-          '<div class="card-time">' + dateStr + ' · ' + timeStr + '</div>' +
+          '<div class="card-time">' + timeStr + '</div>' +
           '<div class="card-door">' + escHtml(member.area ?? '—') + '</div>' +
         '</div>' +
       '</div>';
@@ -649,19 +652,12 @@
 
   // ─── Formatting helpers ───────────────────────────────────────────────────
 
-  function formatTime(date) {
-    return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  }
-
-  function formatDate(date) {
-    const today = new Date();
-    const isToday =
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear();
-    return isToday
-      ? "Hoje"
-      : date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+  // Entry time = server fetch time minus totalTime minutes.
+  // Using fetchedAt (server UTC epoch) ensures accuracy regardless of when the client renders.
+  function totalTimeToClockTime(minutes, fetchedAt) {
+    if (minutes == null) return "—";
+    const entryDate = new Date((fetchedAt ?? Date.now()) - minutes * 60 * 1000);
+    return entryDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   }
 
   function getInitials(name) {
