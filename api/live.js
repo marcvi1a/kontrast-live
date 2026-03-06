@@ -15,7 +15,7 @@ function decodeJwt(token) {
   catch { return null; }
 }
 
-// ── Login ─────────────────────────────────────────────────────────────────────
+// ── Login — returns full response + raw Set-Cookie headers ───────────────────
 async function doLogin() {
   const r = await fetch(`${BASE}/operators/login`, {
     method: "POST",
@@ -23,7 +23,9 @@ async function doLogin() {
     body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
   });
   if (!r.ok) throw new Error(`Login failed ${r.status}: ${await r.text()}`);
-  return r.json();
+  const body    = await r.json();
+  const cookies = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
+  return { body, cookies };
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -31,12 +33,13 @@ export default async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // ?debug=1 — show full login body + decoded JWT, no log fetch
+  // ?debug=1 — show full login body + cookies + decoded JWT
   if (req.query.debug === "1") {
     try {
-      const body = await doLogin();
+      const { body, cookies } = await doLogin();
       return res.status(200).json({
         loginBody:  body,
+        cookies,
         jwtClaims:  decodeJwt(body?.data?.token),
       });
     } catch (err) {
@@ -44,12 +47,13 @@ export default async function handler(req, res) {
     }
   }
 
-  // ?probe=1 — try 4 auth variants against /accesslog/logs, return all results
+  // ?probe=1 — test auth variants including cookie forwarding
   if (req.query.probe === "1") {
     try {
-      const body     = await doLogin();
+      const { body, cookies } = await doLogin();
       const token    = body?.data?.token;
       const tenantId = String(body?.data?.tenantId ?? "");
+      const cookieHdr = cookies.join("; ");
 
       const now    = Math.floor(Date.now() / 1000);
       const params = new URLSearchParams({
@@ -57,29 +61,41 @@ export default async function handler(req, res) {
         dtStart: String(now - 10800), dtEnd: String(now),
         getPhotos: "false", ignoreCount: "true",
       });
+      const logsUrl = `${BASE}/accesslog/logs?${params}`;
 
       const variants = [
         { label: "Bearer only",
-          hdrs: { Authorization: `Bearer ${token}` } },
-        { label: "Bearer + TenantId header",
-          hdrs: { Authorization: `Bearer ${token}`, TenantId: tenantId } },
-        { label: "Token scheme",
-          hdrs: { Authorization: `Token ${token}` } },
-        { label: "Bearer + token query param",
-          path: `/accesslog/logs?${params}&token=${token}`,
-          hdrs: {} },
+          hdrs: { "Authorization": `Bearer ${token}` } },
+        { label: "Bearer + Cookie from login",
+          hdrs: { "Authorization": `Bearer ${token}`, "Cookie": cookieHdr } },
+        { label: "Bearer + TenantId + Cookie",
+          hdrs: { "Authorization": `Bearer ${token}`, "TenantId": tenantId, "Cookie": cookieHdr } },
+        { label: "Cookie only (no Bearer)",
+          hdrs: { "Cookie": cookieHdr } },
+        // Try /accesslog/last which might have different auth requirements
+        { label: "Bearer → /accesslog/last",
+          url:  `${BASE}/accesslog/last`,
+          hdrs: { "Authorization": `Bearer ${token}` } },
+        // Try /dashboard/logs which the JWT mentions DASHBOARD permission
+        { label: "Bearer → /dashboard/logs",
+          url:  `${BASE}/dashboard/logs?pageSize=5&pageNumber=1&sortField=Time&sortOrder=desc`,
+          hdrs: { "Authorization": `Bearer ${token}` } },
+        // Try /reports/actualLocation — current status of who is inside
+        { label: "Bearer → /reports/actualLocation",
+          url:  `${BASE}/reports/actualLocation?pageSize=5&pageNumber=1`,
+          hdrs: { "Authorization": `Bearer ${token}` } },
       ];
 
       const results = await Promise.all(variants.map(async (v) => {
-        const url = `${BASE}${v.path ?? `/accesslog/logs?${params}`}`;
+        const url = v.url ?? logsUrl;
         const r   = await fetch(url, {
           headers: { "Content-Type": "application/json", ...v.hdrs },
         });
         const txt = await r.text();
-        return { label: v.label, status: r.status, body: txt.slice(0, 400) };
+        return { label: v.label, status: r.status, body: txt.slice(0, 500) };
       }));
 
-      return res.status(200).json({ tenantId, jwtClaims: decodeJwt(token), results });
+      return res.status(200).json({ tenantId, cookies, results });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
@@ -87,10 +103,10 @@ export default async function handler(req, res) {
 
   // Normal path
   try {
-    const body     = await doLogin();
+    const { body } = await doLogin();
     const token    = body?.data?.token;
     const tenantId = String(body?.data?.tenantId ?? "");
-    if (!token) throw new Error(`No token in login response: ${JSON.stringify(body)}`);
+    if (!token) throw new Error(`No token: ${JSON.stringify(body)}`);
 
     const members = await getMembersInHouse(token, tenantId);
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
@@ -113,7 +129,7 @@ async function getMembersInHouse(token, tenantId) {
     headers: {
       "Content-Type":  "application/json",
       "Authorization": `Bearer ${token}`,
-      ...(tenantId ? { "TenantId": tenantId, "X-TenantId": tenantId } : {}),
+      ...(tenantId ? { "TenantId": tenantId } : {}),
     },
   });
   if (!r.ok) {
