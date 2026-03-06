@@ -6,22 +6,22 @@
 <title>Live View — Kontrast</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Montserrat:wght@600;800&display=swap" rel="stylesheet" />
 <style>
   /* ── Reset & base ── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:        #0a0a0a;
-    --surface:   #111111;
-    --border:    #1e1e1e;
-    --accent:    #c8ff00;       /* electric lime — Kontrast brand energy */
-    --accent2:   #ff4d00;       /* ember orange for door tag */
+    --bg:        #282723;
+    --surface:   #2e2b26;
+    --border:    #3a3630;
+    --accent:    #fff29d;       /* soft yellow — Kontrast brand */
+    --accent2:   #b364ac;       /* purple */
     --text:      #f0f0f0;
     --muted:     #555;
-    --card-bg:   #141414;
+    --card-bg:   #2c2925;
     --radius:    4px;
-    --font-head: 'Syne', sans-serif;
+    --font-head: 'Montserrat', sans-serif;
     --font-mono: 'DM Mono', monospace;
   }
 
@@ -161,7 +161,7 @@
     object-fit: cover;
     object-position: top center;
     display: block;
-    background: #1a1a1a;
+    background: #2c2925;
     filter: grayscale(20%);
     transition: filter 0.3s;
   }
@@ -177,7 +177,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #1a1a1a 0%, #222 100%);
+    background: linear-gradient(135deg, #2c2925 0%, #343129 100%);
     font-family: var(--font-head);
     font-weight: 800;
     font-size: 42px;
@@ -233,8 +233,8 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--accent2);
-    background: rgba(255,77,0,0.1);
-    border: 1px solid rgba(255,77,0,0.2);
+    background: rgba(179,100,172,0.1);
+    border: 1px solid rgba(179,100,172,0.2);
     padding: 2px 7px;
     border-radius: 2px;
     margin-top: 2px;
@@ -271,7 +271,7 @@
 
   .empty-sub {
     font-size: 12px;
-    color: #333;
+    color: #4a4640;
     letter-spacing: 0.06em;
   }
 
@@ -291,7 +291,7 @@
   .skeleton-photo {
     width: 100%;
     aspect-ratio: 1 / 1;
-    background: linear-gradient(90deg, #181818 25%, #222 50%, #181818 75%);
+    background: linear-gradient(90deg, #282723 25%, #343129 50%, #282723 75%);
     background-size: 200% 100%;
     animation: shimmer 1.4s infinite;
   }
@@ -307,7 +307,7 @@
   .skeleton-line {
     height: 12px;
     border-radius: 2px;
-    background: linear-gradient(90deg, #181818 25%, #222 50%, #181818 75%);
+    background: linear-gradient(90deg, #282723 25%, #343129 50%, #282723 75%);
     background-size: 200% 100%;
     animation: shimmer 1.4s infinite;
   }
@@ -334,13 +334,13 @@
 
   .footer-note {
     font-size: 11px;
-    color: #2a2a2a;
+    color: #4a4640;
     letter-spacing: 0.06em;
   }
 
   #last-update {
     font-size: 11px;
-    color: #2a2a2a;
+    color: #4a4640;
     letter-spacing: 0.06em;
   }
 
@@ -391,7 +391,7 @@
 
   .filter-btn:hover {
     color: var(--text);
-    border-color: #444;
+    border-color: #4a4640;
   }
 
   .filter-btn.active {
@@ -440,10 +440,10 @@
   <!-- Filter bar -->
   <div class="filter-bar">
     <span class="filter-label">Filtrar por:</span>
-    <button class="filter-btn" data-minutes="60">1 hora</button>
     <button class="filter-btn active" data-minutes="120">2 horas</button>
     <button class="filter-btn" data-minutes="240">4 horas</button>
     <button class="filter-btn" data-minutes="today">Hoje</button>
+    <button class="filter-btn" data-minutes="7days">Últimos 7 dias</button>
   </div>
 
   <!-- Error banner -->
@@ -496,7 +496,7 @@
       const val = btn.dataset.minutes;
       activeMinutes = val === "today" ? "today" : parseInt(val, 10);
 
-      const labels = { "60": "Última hora", "120": "Últimas 2 horas", "240": "Últimas 4 horas", "today": "Hoje" };
+      const labels = { "120": "Últimas 2 horas", "240": "Últimas 4 horas", "today": "Hoje", "7days": "Últimos 7 dias" };
       document.getElementById("filter-label-text").textContent = labels[val];
 
       // Force full redraw on filter change
@@ -525,11 +525,17 @@
 
   function filterByTime(members) {
     if (activeMinutes === "today") {
-      // "Today" = entered after 00:01 local time
       const startOfDay = new Date();
       startOfDay.setHours(0, 1, 0, 0);
       const minutesSinceMidnight = (Date.now() - startOfDay.getTime()) / 60000;
       return members.filter(m => m.totalTime != null && m.totalTime <= minutesSinceMidnight);
+    }
+    if (activeMinutes === "7days") {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      sevenDaysAgo.setHours(0, 1, 0, 0);
+      const minutesSince7Days = (Date.now() - sevenDaysAgo.getTime()) / 60000;
+      return members.filter(m => m.totalTime != null && m.totalTime <= minutesSince7Days);
     }
     return members.filter(m => m.totalTime != null && m.totalTime <= activeMinutes);
   }
@@ -554,8 +560,7 @@
       container.innerHTML = `
         <div class="members-grid">
           <div class="empty-state">
-            <div class="empty-icon">🏠</div>
-            <div class="empty-title">Nenhum membro no espaço</div>
+            <div class="empty-title">Nenhum membro na casa</div>
             <div class="empty-sub">Nenhuma entrada registrada no período</div>
           </div>
         </div>`;
