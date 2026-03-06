@@ -49,7 +49,7 @@ export default async function handler(req, res) {
 
     const members = await getMembersInHouse(token);
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
-    return res.status(200).json({ members, updatedAt: new Date().toISOString() });
+    return res.status(200).json({ members, fetchedAt: Date.now(), updatedAt: new Date().toISOString() });
   } catch (err) {
     return res.status(500).json({ error: "Failed to fetch members", detail: err.message });
   }
