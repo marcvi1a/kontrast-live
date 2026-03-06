@@ -42,59 +42,63 @@ async function login() {
     throw new Error(`Login failed ${res.status}: ${text}`);
   }
   const data = await res.json();
-  const token = data?.data?.token ?? data.token ?? data.accessToken ?? data.jwt;
+  const token = data?.data?.token;
   if (!token) throw new Error(`No token in login response: ${JSON.stringify(data)}`);
   return token;
 }
 
 // ─── Step 2: Fetch access logs from last 3 hours ──────────────────────────────
 async function getMembersInHouse(token) {
-  // API expects Unix timestamps in seconds (as float/double)
-  const dtEnd   = Date.now() / 1000;
+  // Unix timestamps in seconds
+  const dtEnd   = Math.floor(Date.now() / 1000);
   const dtStart = dtEnd - (3 * 60 * 60);
 
+  // Granted access events in iDSecure: "Access" is the standard event string
+  // We pass the events filter to only get granted entries (event type 1 = Access)
   const params = new URLSearchParams({
     pageSize:    "500",
     pageNumber:  "1",
     sortField:   "Time",
     sortOrder:   "desc",
-    dtStart:     dtStart.toFixed(0),
-    dtEnd:       dtEnd.toFixed(0),
+    dtStart:     String(dtStart),
+    dtEnd:       String(dtEnd),
     getPhotos:   "true",
     ignoreCount: "true",
   });
 
   const res = await apiFetch(token, `/accesslog/logs?${params}`);
 
-  // Response is wrapped: { success, data: { records: [...], ... } } or similar
-  const raw = res?.data ?? res;
-  const logs = Array.isArray(raw)
-    ? raw
-    : (raw?.records ?? raw?.logs ?? raw?.items ?? raw?.list ?? []);
+  // Response schema: { data: [ { personId, personName, time, deviceName, event, personAvatar, ... } ] }
+  const logs = Array.isArray(res) ? res : (res?.data ?? []);
 
   if (logs.length === 0) return [];
 
-  // Deduplicate: one entry per person, most recent only
+  // Filter: keep only granted access events, exclude denials
+  const DENIED_EVENTS = ["AccessDenied", "InvalidCard", "InvalidDevice", "Blocked",
+                         "InvalidSchedule", "AntiPassback", "ExceptionList"];
+  const granted = logs.filter(log => !DENIED_EVENTS.includes(log.event));
+
+  // Deduplicate: one card per person, most recent entry only
   const latestByPerson = new Map();
-  for (const log of logs) {
-    const pid = log.personId ?? log.person_id ?? log.id_person ?? log.userId;
-    if (pid && !latestByPerson.has(pid)) {
+  for (const log of granted) {
+    const pid = log.personId;
+    if (pid && pid !== 0 && !latestByPerson.has(pid)) {
       latestByPerson.set(pid, log);
     }
   }
 
-  const members = [...latestByPerson.entries()].map(([pid, log]) => {
-    // Photo may come inline as base64 when getPhotos=true
-    let photo = null;
-    const b64 = log.photo ?? log.image ?? log.personPhoto ?? log.picture;
-    if (b64) photo = `data:image/jpeg;base64,${b64}`;
+  const members = [...latestByPerson.values()].map(log => {
+    // personAvatar comes as base64 string when getPhotos=true
+    const photo = log.personAvatar
+      ? `data:image/jpeg;base64,${log.personAvatar}`
+      : null;
 
     return {
-      id: pid,
-      name: log.personName ?? log.person_name ?? log.name ?? log.userName ?? "Unknown",
+      id:        log.personId,
+      name:      log.personName ?? "Unknown",
       photo,
-      entryTime: log.time ?? log.dateTime ?? log.date_time ?? log.timestamp ?? log.createdAt,
-      door: log.deviceName ?? log.device_name ?? log.doorName ?? log.door_name ?? log.readerName ?? `Porta ${pid}`,
+      entryTime: log.time,
+      door:      log.deviceName ?? log.areaName ?? "—",
     };
   });
 
@@ -107,7 +111,7 @@ async function apiFetch(token, path) {
   const res = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization:  `Bearer ${token}`,
     },
   });
   if (!res.ok) {
