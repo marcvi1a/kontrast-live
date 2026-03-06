@@ -74,27 +74,49 @@ async function getMembersInHouse(token) {
   // Return all members with reasonable totalTime (cap at 24h to exclude ghost records)
   // Client-side JS applies the user's selected time filter
   const MAX_MINUTES = 24 * 60;
-  const today = locs.filter(l =>
+  const filtered = locs.filter(l =>
     l.personId &&
     l.personName &&
     typeof l.totalTime === "number" &&
     l.totalTime <= MAX_MINUTES
   );
 
-  return today.map(l => {
-    // totalTime is minutes inside — compute approximate entry time
-    const entryTime = l.totalTime != null
-      ? new Date(Date.now() - l.totalTime * 60 * 1000).toISOString()
-      : null;
+  if (!filtered.length) return [];
 
-    return {
-      id:        l.personId,
-      name:      l.personName,
-      photo:     null, // fetched separately if needed
-      entryTime,
-      area:      l.areaName ?? "—",
-      role:      l.professionalRole ?? null,
-      totalTime: l.totalTime,
-    };
-  });
+  // Fetch photos in parallel batches of 10
+  const BATCH = 10;
+  const results = [];
+
+  for (let i = 0; i < filtered.length; i += BATCH) {
+    const batch = filtered.slice(i, i + BATCH);
+    const batchResults = await Promise.all(batch.map(async (l) => {
+      const entryTime = new Date(Date.now() - l.totalTime * 60 * 1000).toISOString();
+      let photo = null;
+
+      try {
+        const pr = await fetch(`${BASE}/persons/${l.personId}`, { headers: authHdr });
+        if (pr.ok) {
+          const pBody = await pr.json();
+          const personData = pBody?.data ?? pBody;
+          const photoStr = personData?.personPhoto?.thumbnailPhoto
+                        ?? personData?.personPhoto?.photo
+                        ?? null;
+          if (photoStr) photo = "data:image/jpeg;base64," + photoStr;
+        }
+      } catch { /* photo stays null */ }
+
+      return {
+        id:        l.personId,
+        name:      l.personName,
+        photo,
+        entryTime,
+        area:      l.areaName ?? "—",
+        role:      l.professionalRole ?? null,
+        totalTime: l.totalTime,
+      };
+    }));
+    results.push(...batchResults);
+  }
+
+  return results;
 }
