@@ -10,12 +10,6 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
-function decodeJwt(token) {
-  try { return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()); }
-  catch { return null; }
-}
-
-// ── Login — returns full response + raw Set-Cookie headers ───────────────────
 async function doLogin() {
   const r = await fetch(`${BASE}/operators/login`, {
     method: "POST",
@@ -23,92 +17,64 @@ async function doLogin() {
     body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
   });
   if (!r.ok) throw new Error(`Login failed ${r.status}: ${await r.text()}`);
-  const body    = await r.json();
-  const cookies = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-  return { body, cookies };
+  return r.json();
 }
 
-// ── Main handler ──────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // ?debug=1 — show full login body + cookies + decoded JWT
-  if (req.query.debug === "1") {
-    try {
-      const { body, cookies } = await doLogin();
-      return res.status(200).json({
-        loginBody:  body,
-        cookies,
-        jwtClaims:  decodeJwt(body?.data?.token),
-      });
-    } catch (err) {
-      return res.status(500).json({ error: err.message });
-    }
-  }
-
-  // ?probe=1 — test auth variants including cookie forwarding
+  // ?probe=1 — test multiple endpoints to find which ones work
   if (req.query.probe === "1") {
     try {
-      const { body, cookies } = await doLogin();
-      const token    = body?.data?.token;
-      const tenantId = String(body?.data?.tenantId ?? "");
-      const cookieHdr = cookies.join("; ");
+      const loginData = await doLogin();
+      const token = loginData?.data?.token;
 
-      const now    = Math.floor(Date.now() / 1000);
-      const params = new URLSearchParams({
-        pageSize: "5", pageNumber: "1", sortField: "Time", sortOrder: "desc",
-        dtStart: String(now - 10800), dtEnd: String(now),
-        getPhotos: "false", ignoreCount: "true",
-      });
-      const logsUrl = `${BASE}/accesslog/logs?${params}`;
+      const now = Math.floor(Date.now() / 1000);
+      const authHdr = { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
 
-      const variants = [
-        { label: "Bearer only",
-          hdrs: { "Authorization": `Bearer ${token}` } },
-        { label: "Bearer + Cookie from login",
-          hdrs: { "Authorization": `Bearer ${token}`, "Cookie": cookieHdr } },
-        { label: "Bearer + TenantId + Cookie",
-          hdrs: { "Authorization": `Bearer ${token}`, "TenantId": tenantId, "Cookie": cookieHdr } },
-        { label: "Cookie only (no Bearer)",
-          hdrs: { "Cookie": cookieHdr } },
-        // Try /accesslog/last which might have different auth requirements
-        { label: "Bearer → /accesslog/last",
-          url:  `${BASE}/accesslog/last`,
-          hdrs: { "Authorization": `Bearer ${token}` } },
-        // Try /dashboard/logs which the JWT mentions DASHBOARD permission
-        { label: "Bearer → /dashboard/logs",
-          url:  `${BASE}/dashboard/logs?pageSize=5&pageNumber=1&sortField=Time&sortOrder=desc`,
-          hdrs: { "Authorization": `Bearer ${token}` } },
-        // Try /reports/actualLocation — current status of who is inside
-        { label: "Bearer → /reports/actualLocation",
-          url:  `${BASE}/reports/actualLocation?pageSize=5&pageNumber=1`,
-          hdrs: { "Authorization": `Bearer ${token}` } },
+      const tests = [
+        // actualLocation — who is currently inside (perfect for our use case)
+        { label: "actualLocation (pageSize+pageNumber only)",
+          url: `${BASE}/reports/actualLocation?pageSize=5&pageNumber=1` },
+        { label: "actualLocation + sortField=personName",
+          url: `${BASE}/reports/actualLocation?pageSize=5&pageNumber=1&sortField=personName&sortOrder=asc` },
+        { label: "actualLocation + sortField=name",
+          url: `${BASE}/reports/actualLocation?pageSize=5&pageNumber=1&sortField=name&sortOrder=asc` },
+        // accesslog with different endpoints
+        { label: "accesslog/last (no params)",
+          url: `${BASE}/accesslog/last` },
+        { label: "dashboard/last (no params)",
+          url: `${BASE}/dashboard/last` },
+        { label: "dashboard/lastdayaccess",
+          url: `${BASE}/dashboard/lastdayaccess?pageSize=5&pageNumber=1&sortField=Time&sortOrder=desc` },
+        // persons endpoint to verify auth works at all
+        { label: "persons list",
+          url: `${BASE}/persons?pageSize=5&pageNumber=1` },
+        // accesslog/logs with sortField=time (lowercase)
+        { label: "accesslog/logs sortField=time (lowercase)",
+          url: `${BASE}/accesslog/logs?pageSize=5&pageNumber=1&sortField=time&sortOrder=desc&dtStart=${now-10800}&dtEnd=${now}&ignoreCount=true` },
       ];
 
-      const results = await Promise.all(variants.map(async (v) => {
-        const url = v.url ?? logsUrl;
-        const r   = await fetch(url, {
-          headers: { "Content-Type": "application/json", ...v.hdrs },
-        });
+      const results = await Promise.all(tests.map(async (t) => {
+        const r = await fetch(t.url, { headers: authHdr });
         const txt = await r.text();
-        return { label: v.label, status: r.status, body: txt.slice(0, 500) };
+        return { label: t.label, status: r.status, body: txt.slice(0, 300) };
       }));
 
-      return res.status(200).json({ tenantId, cookies, results });
+      return res.status(200).json({ results });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
   }
 
-  // Normal path
+  // Normal path — uses actualLocation
   try {
-    const { body } = await doLogin();
-    const token    = body?.data?.token;
-    const tenantId = String(body?.data?.tenantId ?? "");
-    if (!token) throw new Error(`No token: ${JSON.stringify(body)}`);
+    const loginData = await doLogin();
+    const token = loginData?.data?.token;
+    if (!token) throw new Error(`No token: ${JSON.stringify(loginData)}`);
 
-    const members = await getMembersInHouse(token, tenantId);
+    const members = await getMembersInHouse(token);
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
     return res.status(200).json({ members, updatedAt: new Date().toISOString() });
   } catch (err) {
@@ -116,46 +82,27 @@ export default async function handler(req, res) {
   }
 }
 
-// ── Fetch access logs ─────────────────────────────────────────────────────────
-async function getMembersInHouse(token, tenantId) {
-  const now    = Math.floor(Date.now() / 1000);
+async function getMembersInHouse(token) {
+  // /reports/actualLocation — shows who is currently inside
   const params = new URLSearchParams({
-    pageSize: "500", pageNumber: "1", sortField: "Time", sortOrder: "desc",
-    dtStart: String(now - 10800), dtEnd: String(now),
-    getPhotos: "true", ignoreCount: "true",
+    pageSize: "500", pageNumber: "1",
+    sortField: "personName", sortOrder: "asc",
   });
 
-  const r = await fetch(`${BASE}/accesslog/logs?${params}`, {
-    headers: {
-      "Content-Type":  "application/json",
-      "Authorization": `Bearer ${token}`,
-      ...(tenantId ? { "TenantId": tenantId } : {}),
-    },
+  const r = await fetch(`${BASE}/reports/actualLocation?${params}`, {
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
   });
-  if (!r.ok) {
-    throw new Error(`iDSecure ${r.status} on /accesslog/logs (tenantId=${tenantId}): ${await r.text()}`);
-  }
+  if (!r.ok) throw new Error(`iDSecure ${r.status} on /reports/actualLocation: ${await r.text()}`);
 
   const body = await r.json();
-  const logs = Array.isArray(body) ? body : (body?.data ?? []);
-  if (!logs.length) return [];
+  const locs = Array.isArray(body) ? body : (body?.data ?? []);
+  if (!locs.length) return [];
 
-  const DENIED = ["AccessDenied","InvalidCard","InvalidDevice","Blocked",
-                  "InvalidSchedule","AntiPassback","ExceptionList"];
-  const granted = logs.filter(l => !DENIED.includes(l.event));
-
-  const latest = new Map();
-  for (const l of granted) {
-    if (l.personId && l.personId !== 0 && !latest.has(l.personId)) latest.set(l.personId, l);
-  }
-
-  return [...latest.values()]
-    .map(l => ({
-      id:        l.personId,
-      name:      l.personName ?? "Unknown",
-      photo:     l.personAvatar ? `data:image/jpeg;base64,${l.personAvatar}` : null,
-      entryTime: l.time,
-      door:      l.deviceName ?? l.areaName ?? "—",
-    }))
-    .sort((a, b) => new Date(b.entryTime) - new Date(a.entryTime));
+  return locs.map(l => ({
+    id:        l.personId,
+    name:      l.personName ?? l.person?.name ?? "Unknown",
+    photo:     l.personAvatar ? `data:image/jpeg;base64,${l.personAvatar}` : null,
+    entryTime: l.enteredAt ?? l.time ?? null,
+    door:      l.areaName ?? l.area?.name ?? "—",
+  }));
 }
