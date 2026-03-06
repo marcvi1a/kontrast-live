@@ -357,6 +357,49 @@
     display: none;
   }
 
+  /* ── Filter bar ── */
+  .filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 32px;
+  }
+
+  .filter-label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-right: 6px;
+    white-space: nowrap;
+  }
+
+  .filter-btn {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+
+  .filter-btn:hover {
+    color: var(--text);
+    border-color: #444;
+  }
+
+  .filter-btn.active {
+    color: var(--bg);
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
   /* ── Responsive ── */
   @media (max-width: 480px) {
     .page { padding: 32px 16px 60px; }
@@ -373,7 +416,7 @@
   <!-- Header -->
   <header class="header">
     <div class="header-left">
-      <p>Kontrast  · Últimas 3 horas</p>
+      <p>Kontrast · <span id="filter-label-text">Últimas 2 horas</span></p>
     </div>
     <div class="live-badge">
       <div class="live-dot"></div>
@@ -392,6 +435,15 @@
       <span class="stat-value" id="last-entry-time">—</span>
       <span class="stat-label">Última entrada</span>
     </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-bar">
+    <span class="filter-label">Filtrar por:</span>
+    <button class="filter-btn" data-minutes="60">1 hora</button>
+    <button class="filter-btn active" data-minutes="120">2 horas</button>
+    <button class="filter-btn" data-minutes="240">4 horas</button>
+    <button class="filter-btn" data-minutes="today">Hoje</button>
   </div>
 
   <!-- Error banner -->
@@ -433,13 +485,35 @@
   // ─────────────────────────────────────────────────────────────────────────
 
   let currentIds = new Set();
+  let activeMinutes = 120; // default: 2 hours
+
+  // ─── Filter buttons ───────────────────────────────────────────────────────
+  document.querySelectorAll(".filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      const val = btn.dataset.minutes;
+      activeMinutes = val === "today" ? "today" : parseInt(val, 10);
+
+      const labels = { "60": "Última hora", "120": "Últimas 2 horas", "240": "Últimas 4 horas", "today": "Hoje" };
+      document.getElementById("filter-label-text").textContent = labels[val];
+
+      // Force full redraw on filter change
+      currentIds = new Set();
+      fetchMembers();
+    });
+  });
+
+  // ─── Data fetching ────────────────────────────────────────────────────────
 
   async function fetchMembers() {
     try {
       const res = await fetch(API_URL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      renderMembers(data.members ?? []);
+      const filtered = filterByTime(data.members ?? []);
+      renderMembers(filtered);
       document.getElementById("error-banner").style.display = "none";
       document.getElementById("last-update").textContent =
         "Atualizado às " + formatTime(new Date());
@@ -447,6 +521,17 @@
       console.error("Fetch error:", err);
       document.getElementById("error-banner").style.display = "block";
     }
+  }
+
+  function filterByTime(members) {
+    if (activeMinutes === "today") {
+      // "Today" = entered after 00:01 local time
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 1, 0, 0);
+      const minutesSinceMidnight = (Date.now() - startOfDay.getTime()) / 60000;
+      return members.filter(m => m.totalTime != null && m.totalTime <= minutesSinceMidnight);
+    }
+    return members.filter(m => m.totalTime != null && m.totalTime <= activeMinutes);
   }
 
   function renderMembers(members) {
@@ -471,7 +556,7 @@
           <div class="empty-state">
             <div class="empty-icon">🏠</div>
             <div class="empty-title">Nenhum membro no espaço</div>
-            <div class="empty-sub">Nas últimas 3 horas não houve entradas registradas</div>
+            <div class="empty-sub">Nenhuma entrada registrada no período</div>
           </div>
         </div>`;
       currentIds = new Set();
@@ -536,23 +621,25 @@
     const timeStr = formatTime(new Date(member.entryTime));
     const dateStr = formatDate(new Date(member.entryTime));
 
+    const fallbackHtml = '<div class="card-avatar-fallback">' + escHtml(initials) + '</div>';
     const photoHtml = member.photo
-      ? `<img class="card-photo"
-              src="${escHtml(member.photo)}"
-              alt="${escHtml(member.name)}"
-              loading="lazy"
-              onerror="this.parentElement.innerHTML='<div class=\\'card-avatar-fallback\\'>${escHtml(initials)}</div>'" />`
-      : `<div class="card-avatar-fallback">${escHtml(initials)}</div>`;
+      ? '<img class="card-photo"' +
+        ' src="' + escHtml(member.photo) + '"' +
+        ' alt="' + escHtml(member.name) + '"' +
+        ' loading="lazy"' +
+        ' onerror="this.parentElement.innerHTML=this.dataset.fallback"' +
+        ' data-fallback="' + escHtml(fallbackHtml) + '" />'
+      : fallbackHtml;
 
-    card.innerHTML = `
-      ${photoHtml}
-      <div class="card-info">
-        <div class="card-name" title="${escHtml(member.name)}">${escHtml(member.name)}</div>
-        <div class="card-meta">
-          <div class="card-time">${dateStr} · ${timeStr}</div>
-          <div class="card-door">${escHtml(member.door)}</div>
-        </div>
-      </div>`;
+    card.innerHTML =
+      photoHtml +
+      '<div class="card-info">' +
+        '<div class="card-name" title="' + escHtml(member.name) + '">' + escHtml(member.name) + '</div>' +
+        '<div class="card-meta">' +
+          '<div class="card-time">' + dateStr + ' · ' + timeStr + '</div>' +
+          '<div class="card-door">' + escHtml(member.area ?? '—') + '</div>' +
+        '</div>' +
+      '</div>';
 
     return card;
   }
