@@ -3,16 +3,9 @@ const BASE     = "https://main.idsecure.com.br:5000/api/v1";
 const EMAIL    = process.env.IDSECURE_EMAIL;
 const PASSWORD = process.env.IDSECURE_PASSWORD;
 
-function setCors(res, req) {
-  const origin = req?.headers?.origin || "";
-  const allowedOrigins = [
-    "https://live.kontrast.com.br",
-    "https://kontrast-live.vercel.app",
-  ];
-  const originHeader = allowedOrigins.includes(origin)
-    ? origin
-    : (process.env.ALLOWED_ORIGIN || "https://live.kontrast.com.br");
-  res.setHeader("Access-Control-Allow-Origin", originHeader);
+function setCors(res) {
+  const allowed = process.env.ALLOWED_ORIGIN || "https://kontrast.com.br";
+  res.setHeader("Access-Control-Allow-Origin", allowed);
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
@@ -28,7 +21,7 @@ async function doLogin() {
 }
 
 export default async function handler(req, res) {
-  setCors(res, req);
+  setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // ?raw=1 — inspect actual field names from actualLocation
@@ -92,9 +85,9 @@ async function getMembersInHouse(token) {
     id:        l.personId,
     name:      l.personName,
     photo:     null,
-    entryTime: new Date(Date.now() - l.totalTime * 60 * 1000).toISOString(),
+    entryTime: null,          // API does not return actual entry timestamp
     area:      l.areaName ?? "—",
     role:      l.professionalRole ?? null,
-    totalTime: l.totalTime,
+    totalTime: l.totalTime,   // minutes inside — used by client for filtering and display
   }));
 }
