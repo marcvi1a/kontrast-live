@@ -2,7 +2,7 @@
 // Uses iDSecure REST API v1: https://main.idsecure.com.br:5000/api/v1
 
 const BASE = "https://main.idsecure.com.br:5000/api/v1";
-const EMAIL = process.env.IDSECURE_EMAIL;
+const EMAIL    = process.env.IDSECURE_EMAIL;
 const PASSWORD = process.env.IDSECURE_PASSWORD;
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   }
 }
 
-// ─── Step 1: Login and get JWT + tenantId ────────────────────────────────────
+// ─── Step 1: Login ────────────────────────────────────────────────────────────
 async function login() {
   const res = await fetch(`${BASE}/operators/login`, {
     method: "POST",
@@ -43,12 +43,12 @@ async function login() {
   }
   const data = await res.json();
   const token    = data?.data?.token;
-  const tenantId = data?.data?.tenantId;
+  const tenantId = String(data?.data?.tenantId ?? "");
   if (!token) throw new Error(`No token in login response: ${JSON.stringify(data)}`);
   return { token, tenantId };
 }
 
-// ─── Step 2: Fetch access logs from last 3 hours ──────────────────────────────
+// ─── Step 2: Fetch access logs ────────────────────────────────────────────────
 async function getMembersInHouse(token, tenantId) {
   const dtEnd   = Math.floor(Date.now() / 1000);
   const dtStart = dtEnd - (3 * 60 * 60);
@@ -69,12 +69,10 @@ async function getMembersInHouse(token, tenantId) {
 
   if (logs.length === 0) return [];
 
-  // Exclude denied/invalid events
   const DENIED_EVENTS = ["AccessDenied", "InvalidCard", "InvalidDevice", "Blocked",
                          "InvalidSchedule", "AntiPassback", "ExceptionList"];
   const granted = logs.filter(log => !DENIED_EVENTS.includes(log.event));
 
-  // One card per person, most recent entry only
   const latestByPerson = new Map();
   for (const log of granted) {
     const pid = log.personId;
@@ -97,21 +95,24 @@ async function getMembersInHouse(token, tenantId) {
 // ─── HTTP helper ──────────────────────────────────────────────────────────────
 async function apiFetch(token, tenantId, path) {
   const url = `${BASE}${path}`;
-  const headers = {
-    "Content-Type":  "application/json",
-    "Authorization": `Bearer ${token}`,
-  };
+  const res = await fetch(url, {
+    headers: {
+      "Content-Type":   "application/json",
+      "Authorization":  `Bearer ${token}`,
+      // Try all common tenant header variants
+      ...(tenantId && {
+        "TenantId":        tenantId,
+        "X-TenantId":      tenantId,
+        "Tenant":          tenantId,
+        "X-Tenant-Id":     tenantId,
+      }),
+    },
+  });
 
-  // iDSecure cloud requires tenantId on all requests after login
-  if (tenantId) {
-    headers["TenantId"]  = String(tenantId);
-    headers["X-TenantId"] = String(tenantId);  // try both common variants
-  }
-
-  const res = await fetch(url, { headers });
+  // If still 401, include tenantId as a debug hint in the error
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`iDSecure ${res.status} on ${path}: ${text}`);
+    throw new Error(`iDSecure ${res.status} on ${path} (tenantId=${tenantId}): ${text}`);
   }
   return res.json();
 }
