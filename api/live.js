@@ -30,6 +30,26 @@ export default async function handler(req, res) {
     const token = loginData?.data?.token;
     if (!token) throw new Error(`No token: ${JSON.stringify(loginData)}`);
 
+    // Debug: inspect /persons/{id} response structure
+    const debugId = new URL(req.url, "http://localhost").searchParams.get("debugPerson");
+    if (debugId) {
+      const r = await fetch(`${LOGIN_BASE}/persons/${debugId}`, {
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      const body = await r.json();
+      // Return keys and types (not full photo data) for debugging
+      const summary = {};
+      const data = body?.data ?? body;
+      for (const [k, v] of Object.entries(data)) {
+        if (typeof v === "string" && v.length > 200) {
+          summary[k] = `[string, ${v.length} chars, starts: ${v.substring(0, 80)}...]`;
+        } else {
+          summary[k] = v;
+        }
+      }
+      return res.status(200).json({ debugPersonId: debugId, keys: Object.keys(data), summary });
+    }
+
     const [members, memberIds, instrutorIds] = await Promise.all([
       getRecentAccess(token),
       getPersonIdsByGroup(token, MEMBER_GROUP_ID),
