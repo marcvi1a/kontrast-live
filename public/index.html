@@ -29,7 +29,7 @@
   <div class="stats-bar">
     <div class="stat">
       <span class="stat-value" id="count">—</span>
-      <span class="stat-label">Membros na casa</span>
+      <span class="stat-label" id="count-label">Membros na casa</span>
     </div>
     <div class="stat-divider"></div>
     <div class="stat">
@@ -46,6 +46,14 @@
     <button class="filter-btn" data-minutes="today">Hoje</button>
     <button class="filter-btn secondary" data-minutes="yesterday">Ontem</button>
     <button class="filter-btn secondary" data-minutes="7days">Últimos 7 dias</button>
+  </div>
+
+  <!-- Group filter bar -->
+  <div class="filter-bar">
+    <span class="filter-label">Grupo:</span>
+    <button class="group-btn active" data-group="members">Membros</button>
+    <button class="group-btn" data-group="others">Otros</button>
+    <button class="group-btn secondary" data-group="all">Todos</button>
   </div>
 
   <!-- Error banner -->
@@ -79,6 +87,7 @@
 
   let currentIds = new Set();
   let activeFilter = 120; // default: 2 hours (in minutes), or "today" / "yesterday" / "7days"
+  let activeGroupFilter = "members"; // "members" | "others" | "all"
   let cachedMembers = []; // cached API response for instant filter switching
 
   // ─── Filter buttons ───────────────────────────────────────────────────────
@@ -95,9 +104,23 @@
     });
   });
 
+  // ─── Group filter buttons ─────────────────────────────────────────────────
+  const GROUP_LABELS = { members: "Membros na casa", others: "Otros na casa", all: "Todos na casa" };
+
+  document.querySelectorAll(".group-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".group-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeGroupFilter = btn.dataset.group;
+      document.getElementById("count-label").textContent = GROUP_LABELS[activeGroupFilter];
+      applyFilter();
+    });
+  });
+
   // ─── Data fetching ────────────────────────────────────────────────────────
 
   let prevFilter = activeFilter;
+  let prevGroupFilter = activeGroupFilter;
   let isFilterSwitch = false;
 
   function deduplicateByPerson(members) {
@@ -118,6 +141,12 @@
 
   function applyFilter() {
     let filtered = filterByTime(cachedMembers);
+    // Apply group filter
+    if (activeGroupFilter === "members") {
+      filtered = filtered.filter(m => m.isMember);
+    } else if (activeGroupFilter === "others") {
+      filtered = filtered.filter(m => !m.isMember);
+    }
     // Deduplicate AFTER filtering — keep most recent entry per person within the period
     filtered = deduplicateByPerson(filtered);
     if (activeFilter === "7days") {
@@ -130,11 +159,12 @@
       });
     }
     // Force full redraw on any filter change for correct sort order
-    if (activeFilter !== prevFilter) {
+    if (activeFilter !== prevFilter || activeGroupFilter !== prevGroupFilter) {
       currentIds = new Set();
       isFilterSwitch = true;
     }
     prevFilter = activeFilter;
+    prevGroupFilter = activeGroupFilter;
     renderMembers(filtered);
     isFilterSwitch = false;
   }

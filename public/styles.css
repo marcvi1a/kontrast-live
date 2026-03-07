@@ -357,7 +357,8 @@ body {
   white-space: nowrap;
 }
 
-.filter-btn {
+.filter-btn,
+.group-btn {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -372,24 +373,28 @@ body {
   white-space: nowrap;
 }
 
-.filter-btn:hover {
+.filter-btn:hover,
+.group-btn:hover {
   color: var(--text);
   border-color: #4a4640;
 }
 
-.filter-btn.active {
+.filter-btn.active,
+.group-btn.active {
   color: var(--bg);
   background: var(--accent);
   border-color: var(--accent);
 }
 
-/* Secondary filter buttons (historical views) */
-.filter-btn.secondary {
+/* Secondary buttons (historical views / "Todos" group) */
+.filter-btn.secondary,
+.group-btn.secondary {
   border-style: dashed;
   border-color: #4a4640;
 }
 
-.filter-btn.secondary.active {
+.filter-btn.secondary.active,
+.group-btn.secondary.active {
   color: var(--text);
   background: rgba(255,255,255,0.08);
   border-color: var(--muted);
