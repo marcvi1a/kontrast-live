@@ -521,6 +521,7 @@
   // ─── Data fetching ────────────────────────────────────────────────────────
 
   let prevFilter = activeFilter;
+  let isFilterSwitch = false;
 
   function applyFilter() {
     let filtered = filterByTime(cachedMembers);
@@ -533,12 +534,14 @@
         return tb - ta; // most recent first
       });
     }
-    // Force full redraw when sort order changes (to/from 7days)
-    if ((activeFilter === "7days") !== (prevFilter === "7days")) {
+    // Force full redraw on any filter change for correct sort order
+    if (activeFilter !== prevFilter) {
       currentIds = new Set();
+      isFilterSwitch = true;
     }
     prevFilter = activeFilter;
     renderMembers(filtered);
+    isFilterSwitch = false;
   }
 
   async function fetchMembers() {
@@ -625,7 +628,13 @@
       grid.className = "members-grid";
       members.forEach((member, i) => {
         const card = buildCard(member);
-        card.style.animationDelay = `${i * 40}ms`;
+        if (isFilterSwitch) {
+          card.style.animation = "none";
+          card.style.opacity = "1";
+          card.style.transform = "none";
+        } else {
+          card.style.animationDelay = `${i * 40}ms`;
+        }
         grid.appendChild(card);
       });
       container.innerHTML = "";
