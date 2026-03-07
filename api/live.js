@@ -30,38 +30,22 @@ export default async function handler(req, res) {
     const token = loginData?.data?.token;
     if (!token) throw new Error(`No token: ${JSON.stringify(loginData)}`);
 
-    const { members, _rawSample } = await getRecentAccess(token);
+    const members = await getRecentAccess(token);
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
-    return res.status(200).json({ members, _rawSample, fetchedAt: Date.now(), updatedAt: new Date().toISOString() });
+    return res.status(200).json({ members, fetchedAt: Date.now(), updatedAt: new Date().toISOString() });
   } catch (err) {
     return res.status(500).json({ error: "Failed to fetch members", detail: err.message });
   }
 }
 
-async function getRecentAccess(token) {
-  const authHdr = { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
+function parseLogs(body) {
+  const raw = Array.isArray(body) ? body
+            : Array.isArray(body?.data) ? body.data
+            : (body?.data?.data ?? []);
+  return raw;
+}
 
-  const r = await fetch(
-    `${DATA_BASE}/accesslog/last?getPhotos=true&Quantity=100`,
-    { headers: authHdr }
-  );
-  if (!r.ok) throw new Error(`iDSecure ${r.status}: ${await r.text()}`);
-
-  const body = await r.json();
-  const logs = Array.isArray(body) ? body
-             : Array.isArray(body?.data) ? body.data
-             : (body?.data?.data ?? []);
-
-  if (!logs.length) return { members: [], _rawSample: null };
-
-  // Debug: first raw entry with long strings (photos) truncated
-  const _rawSample = Object.fromEntries(
-    Object.entries(logs[0]).map(([k, v]) =>
-      [k, typeof v === "string" && v.length > 200 ? `[${v.length} chars]` : v]
-    )
-  );
-
-  // Deduplicate by personId — keep only the most recent entry per person
+function deduplicateByPerson(logs) {
   const seen = new Map();
   for (const l of logs) {
     const pid = l.personId;
@@ -70,16 +54,64 @@ async function getRecentAccess(token) {
       seen.set(pid, l);
     }
   }
+  return seen;
+}
 
-  const members = Array.from(seen.values()).map(l => ({
-    id:        l.personId,
-    name:      l.personName ?? "Desconhecido",
-    photo:     l.personAvatar
-                 ? (l.personAvatar.startsWith("data:") ? l.personAvatar : `data:image/jpeg;base64,${l.personAvatar}`)
-                 : null,
-    entryTime: l.time ?? null,
-    area:      l.areaName ?? l.deviceName ?? "—",
-  }));
+async function getRecentAccess(token) {
+  const authHdr = { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
 
-  return { members, _rawSample };
+  // 1) Full list without photos (supports high Quantity)
+  const fullReq = fetch(
+    `${DATA_BASE}/accesslog/last?getPhotos=false&Quantity=1000`,
+    { headers: authHdr }
+  );
+
+  // 2) Recent entries with photos (limited Quantity to avoid payload issues)
+  const photoReq = fetch(
+    `${DATA_BASE}/accesslog/last?getPhotos=true&Quantity=100`,
+    { headers: authHdr }
+  );
+
+  const [fullRes, photoRes] = await Promise.all([fullReq, photoReq]);
+
+  if (!fullRes.ok) throw new Error(`iDSecure full ${fullRes.status}: ${await fullRes.text()}`);
+  const fullLogs = parseLogs(await fullRes.json());
+
+  // Build photo map from the photo response (keyed by personId)
+  const photoMap = new Map();
+  if (photoRes.ok) {
+    const photoLogs = parseLogs(await photoRes.json());
+    for (const l of photoLogs) {
+      if (l.personId && l.personAvatar && !photoMap.has(l.personId)) {
+        const avatar = l.personAvatar;
+        photoMap.set(l.personId, avatar.startsWith("data:") ? avatar : `data:image/jpeg;base64,${avatar}`);
+      }
+    }
+  }
+
+  if (!fullLogs.length) return [];
+
+  // Deduplicate — keep only the most recent entry per person
+  const seen = deduplicateByPerson(fullLogs);
+
+  // "Yesterday or sooner" = start of yesterday onwards
+  const startOfYesterday = new Date();
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  startOfYesterday.setHours(0, 0, 0, 0);
+  const yesterdayCutoff = startOfYesterday.getTime();
+
+  return Array.from(seen.values()).map(l => {
+    const entryTime = l.time ?? null;
+    const entryMs = entryTime ? new Date(entryTime).getTime() : 0;
+    // Only attach photo if the entry is from yesterday or sooner (today)
+    const photo = (entryMs >= yesterdayCutoff) ? (photoMap.get(l.personId) ?? null) : null;
+
+    return {
+      id:        l.personId,
+      name:      l.personName ?? "Desconhecido",
+      photo,
+      entryTime,
+      area:      l.areaName ?? l.deviceName ?? "—",
+    };
+  });
 }
