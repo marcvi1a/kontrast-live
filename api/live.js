@@ -30,9 +30,9 @@ export default async function handler(req, res) {
     const token = loginData?.data?.token;
     if (!token) throw new Error(`No token: ${JSON.stringify(loginData)}`);
 
-    const members = await getRecentAccess(token);
+    const { members, _rawSample } = await getRecentAccess(token);
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
-    return res.status(200).json({ members, fetchedAt: Date.now(), updatedAt: new Date().toISOString() });
+    return res.status(200).json({ members, _rawSample, fetchedAt: Date.now(), updatedAt: new Date().toISOString() });
   } catch (err) {
     return res.status(500).json({ error: "Failed to fetch members", detail: err.message });
   }
@@ -52,7 +52,14 @@ async function getRecentAccess(token) {
              : Array.isArray(body?.data) ? body.data
              : (body?.data?.data ?? []);
 
-  if (!logs.length) return [];
+  if (!logs.length) return { members: [], _rawSample: null };
+
+  // Debug: first raw entry with long strings (photos) truncated
+  const _rawSample = Object.fromEntries(
+    Object.entries(logs[0]).map(([k, v]) =>
+      [k, typeof v === "string" && v.length > 200 ? `[${v.length} chars]` : v]
+    )
+  );
 
   // Deduplicate by personId — keep only the most recent entry per person
   const seen = new Map();
@@ -64,7 +71,7 @@ async function getRecentAccess(token) {
     }
   }
 
-  return Array.from(seen.values()).map(l => ({
+  const members = Array.from(seen.values()).map(l => ({
     id:        l.personId,
     name:      l.personName ?? "Desconhecido",
     photo:     l.photo ? `data:image/jpeg;base64,${l.photo}` : null,
@@ -72,4 +79,6 @@ async function getRecentAccess(token) {
     area:      l.readerName ?? l.areaName ?? l.doorName ?? "—",
     role:      l.professionalRole ?? null,
   }));
+
+  return { members, _rawSample };
 }
