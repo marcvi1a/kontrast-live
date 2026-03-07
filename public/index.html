@@ -246,6 +246,20 @@
     max-width: 100%;
   }
 
+  /* ── No-photos mode (7 days) ── */
+  .members-grid.no-photos .card-photo,
+  .members-grid.no-photos .card-avatar-fallback {
+    display: none;
+  }
+
+  .members-grid.no-photos .card-info {
+    border-top: none;
+  }
+
+  .members-grid.no-photos {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
   /* ── Empty state ── */
   .empty-state {
     grid-column: 1/-1;
@@ -418,7 +432,7 @@
   <!-- Header -->
   <header class="header">
     <div class="header-left">
-      <p>Kontrast · <span id="filter-label-text">Últimas 2 horas</span></p>
+      <p>Kontrast · <span id="filter-label-text">Últimas entradas</span></p>
     </div>
     <div class="live-badge">
       <div class="live-dot"></div>
@@ -501,7 +515,7 @@
       activeFilter = (val === "today" || val === "yesterday" || val === "7days") ? val : parseInt(val, 10);
 
       const labels = { "120": "Últimas 2 horas", "240": "Últimas 4 horas", "today": "Hoje", "yesterday": "Ontem", "7days": "Últimos 7 dias" };
-      document.getElementById("filter-label-text").textContent = labels[val];
+      document.getElementById("filter-label-text").textContent = labels[val] ?? "Últimas entradas";
 
       // Re-filter cached data locally — no API call, no full redraw
       applyFilter();
@@ -631,6 +645,10 @@
         }
       });
     }
+
+    // Toggle no-photos mode for 7days filter
+    const grid = container.querySelector(".members-grid");
+    if (grid) grid.classList.toggle("no-photos", activeFilter === "7days");
 
     currentIds = newIds;
   }
