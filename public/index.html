@@ -520,11 +520,18 @@
 
   // ─── Data fetching ────────────────────────────────────────────────────────
 
+  let prevFilter = activeFilter;
+
   function applyFilter() {
     let filtered = filterByTime(cachedMembers);
     if (activeFilter === "7days") {
       filtered = filtered.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     }
+    // Force full redraw when sort order changes (to/from 7days)
+    if ((activeFilter === "7days") !== (prevFilter === "7days")) {
+      currentIds = new Set();
+    }
+    prevFilter = activeFilter;
     renderMembers(filtered);
   }
 
