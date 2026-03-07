@@ -234,11 +234,10 @@
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--accent2);
-    background: rgba(179,100,172,0.1);
-    border: 1px solid rgba(179,100,172,0.2);
-    padding: 2px 7px;
-    border-radius: 2px;
+    color: var(--muted);
+    background: transparent;
+    border: none;
+    padding: 0;
     margin-top: 2px;
     white-space: nowrap;
     overflow: hidden;
@@ -444,7 +443,7 @@
   <div class="stats-bar">
     <div class="stat">
       <span class="stat-value" id="count">—</span>
-      <span class="stat-label">Membros presentes</span>
+      <span class="stat-label">Membros na casa</span>
     </div>
     <div class="stat-divider"></div>
     <div class="stat">
@@ -514,9 +513,6 @@
       const val = btn.dataset.minutes;
       activeFilter = (val === "today" || val === "yesterday" || val === "7days") ? val : parseInt(val, 10);
 
-      const labels = { "120": "Últimas 2 horas", "240": "Últimas 4 horas", "today": "Hoje", "yesterday": "Ontem", "7days": "Últimos 7 dias" };
-      document.getElementById("filter-label-text").textContent = labels[val] ?? "Últimas entradas";
-
       // Re-filter cached data locally — no API call, no full redraw
       applyFilter();
     });
@@ -525,7 +521,10 @@
   // ─── Data fetching ────────────────────────────────────────────────────────
 
   function applyFilter() {
-    const filtered = filterByTime(cachedMembers);
+    let filtered = filterByTime(cachedMembers);
+    if (activeFilter === "7days") {
+      filtered = filtered.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    }
     renderMembers(filtered);
   }
 
