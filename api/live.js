@@ -74,10 +74,9 @@ async function getRecentAccess(token) {
   const members = Array.from(seen.values()).map(l => ({
     id:        l.personId,
     name:      l.personName ?? "Desconhecido",
-    photo:     l.photo ? `data:image/jpeg;base64,${l.photo}` : null,
-    entryTime: l.time ?? l.accessDate ?? l.date ?? null,
-    area:      l.readerName ?? l.areaName ?? l.doorName ?? "—",
-    role:      l.professionalRole ?? null,
+    photo:     l.personAvatar ? `data:image/jpeg;base64,${l.personAvatar}` : null,
+    entryTime: l.time ?? null,
+    area:      l.areaName ?? l.deviceName ?? "—",
   }));
 
   return { members, _rawSample };
