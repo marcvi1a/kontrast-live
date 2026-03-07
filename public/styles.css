@@ -415,6 +415,16 @@ body {
   .members-grid.no-photos { grid-template-columns: repeat(3, 1fr); }
   .stat-divider { display: none; }
 
+  /* Unified font size for all labels, badges and buttons */
+  .header-left p,
+  .live-badge,
+  .stat-label,
+  .filter-label,
+  .group-btn,
+  .filter-btn {
+    font-size: 11px;
+  }
+
   /* Stats bar: count + group buttons on the same line */
   .stats-bar {
     flex-wrap: nowrap;
@@ -434,10 +444,11 @@ body {
     order: 1;
   }
   .group-btn {
-    font-size: 10px;
-    padding: 5px 8px;
+    padding: 6px 14px;
     order: 0;
   }
+  /* Operacional + Todos drop to second line */
+  .group-btn[data-group="others"],
   .group-btn.secondary {
     order: 2;
   }
@@ -448,8 +459,7 @@ body {
     gap: 4px;
   }
   .filter-btn {
-    font-size: 10px;
-    padding: 5px 8px;
+    padding: 6px 14px;
   }
   .filter-bar::before {
     content: '';
