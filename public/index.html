@@ -486,7 +486,7 @@
   // ─────────────────────────────────────────────────────────────────────────
 
   let currentIds = new Set();
-  let activeMinutes = 120; // default: 2 hours
+  let activeFilter = 120; // default: 2 hours (in minutes), or "today" / "7days"
 
   // ─── Filter buttons ───────────────────────────────────────────────────────
   document.querySelectorAll(".filter-btn").forEach(btn => {
@@ -495,7 +495,7 @@
       btn.classList.add("active");
 
       const val = btn.dataset.minutes;
-      activeMinutes = val === "today" ? "today" : parseInt(val, 10);
+      activeFilter = (val === "today" || val === "7days") ? val : parseInt(val, 10);
 
       const labels = { "120": "Últimas 2 horas", "240": "Últimas 4 horas", "today": "Hoje", "7days": "Últimos 7 dias" };
       document.getElementById("filter-label-text").textContent = labels[val];
@@ -513,10 +513,8 @@
       const res = await fetch(API_URL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      // fetchedAt is the UTC epoch ms when the server captured totalTime values
-      const fetchedAt = data.fetchedAt ?? Date.now();
-      const filtered = filterByTime(data.members ?? [], fetchedAt);
-      renderMembers(filtered, fetchedAt);
+      const filtered = filterByTime(data.members ?? []);
+      renderMembers(filtered);
       document.getElementById("error-banner").style.display = "none";
       document.getElementById("last-update").textContent =
         "Atualizado às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -526,34 +524,34 @@
     }
   }
 
-  function filterByTime(members, fetchedAt) {
-    if (activeMinutes === "today") {
+  function filterByTime(members) {
+    const now = Date.now();
+    if (activeFilter === "today") {
       const startOfDay = new Date();
-      startOfDay.setHours(0, 1, 0, 0);
-      const minutesSinceMidnight = (fetchedAt - startOfDay.getTime()) / 60000;
-      return members.filter(m => m.totalTime != null && m.totalTime <= minutesSinceMidnight);
+      startOfDay.setHours(0, 0, 0, 0);
+      return members.filter(m => m.entryTime && new Date(m.entryTime).getTime() >= startOfDay.getTime());
     }
-    if (activeMinutes === "7days") {
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      sevenDaysAgo.setHours(0, 1, 0, 0);
-      const minutesSince7Days = (fetchedAt - sevenDaysAgo.getTime()) / 60000;
-      return members.filter(m => m.totalTime != null && m.totalTime <= minutesSince7Days);
+    if (activeFilter === "7days") {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 7);
+      cutoff.setHours(0, 0, 0, 0);
+      return members.filter(m => m.entryTime && new Date(m.entryTime).getTime() >= cutoff.getTime());
     }
-    return members.filter(m => m.totalTime != null && m.totalTime <= activeMinutes);
+    const cutoff = now - activeFilter * 60 * 1000;
+    return members.filter(m => m.entryTime && new Date(m.entryTime).getTime() >= cutoff);
   }
 
-  function renderMembers(members, fetchedAt) {
+  function renderMembers(members) {
     const container = document.getElementById("members-container");
 
     // Remove skeleton on first load
     const skeleton = document.getElementById("skeleton");
     if (skeleton) skeleton.remove();
 
-    // Update stats — members[0] has the smallest totalTime (most recent entry)
+    // Update stats — members are sorted most-recent-first from the API
     document.getElementById("count").textContent = members.length;
     if (members.length > 0) {
-      document.getElementById("last-entry-time").textContent = totalTimeToClockTime(members[0].totalTime, fetchedAt);
+      document.getElementById("last-entry-time").textContent = formatEntryTime(members[0].entryTime);
     } else {
       document.getElementById("last-entry-time").textContent = "—";
     }
@@ -581,17 +579,16 @@
       const grid = document.createElement("div");
       grid.className = "members-grid";
       members.forEach((member, i) => {
-        const card = buildCard(member, fetchedAt);
+        const card = buildCard(member);
         card.style.animationDelay = `${i * 40}ms`;
         grid.appendChild(card);
       });
       container.innerHTML = "";
       container.appendChild(grid);
     } else {
-      // Add cards for new members
       const grid = container.querySelector(".members-grid");
 
-      // Remove cards for members no longer in the house
+      // Remove cards for members no longer matching the filter
       currentIds.forEach(id => {
         if (!newIds.has(id)) {
           const el = grid.querySelector(`[data-id="${id}"]`);
@@ -609,7 +606,7 @@
         if (!currentIds.has(id)) {
           const member = members.find(m => m.id === id);
           if (member) {
-            const card = buildCard(member, fetchedAt);
+            const card = buildCard(member);
             grid.prepend(card);
           }
         }
@@ -619,13 +616,13 @@
     currentIds = newIds;
   }
 
-  function buildCard(member, fetchedAt) {
+  function buildCard(member) {
     const card = document.createElement("div");
     card.className = "member-card";
     card.dataset.id = member.id;
 
     const initials = getInitials(member.name);
-    const timeStr = totalTimeToClockTime(member.totalTime, fetchedAt);
+    const timeStr = formatEntryTime(member.entryTime);
 
     const fallbackHtml = '<div class="card-avatar-fallback">' + escHtml(initials) + '</div>';
     const photoHtml = member.photo
@@ -652,12 +649,16 @@
 
   // ─── Formatting helpers ───────────────────────────────────────────────────
 
-  // Entry time = server fetch time minus totalTime minutes.
-  // Using fetchedAt (server UTC epoch) ensures accuracy regardless of when the client renders.
-  function totalTimeToClockTime(minutes, fetchedAt) {
-    if (minutes == null) return "—";
-    const entryDate = new Date((fetchedAt ?? Date.now()) - minutes * 60 * 1000);
-    return entryDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  function formatEntryTime(isoStr) {
+    if (!isoStr) return "—";
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "—";
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    if (isToday) return time;
+    const date = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    return date + " " + time;
   }
 
   function getInitials(name) {
