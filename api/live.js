@@ -30,12 +30,48 @@ export default async function handler(req, res) {
     const token = loginData?.data?.token;
     if (!token) throw new Error(`No token: ${JSON.stringify(loginData)}`);
 
-    const members = await getRecentAccess(token);
+    const [members, memberIds] = await Promise.all([
+      getRecentAccess(token),
+      getMemberGroupIds(token),
+    ]);
+
+    // Tag each entry with isMember based on group 1002
+    for (const m of members) {
+      m.isMember = memberIds.has(m.id);
+    }
+
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
     return res.status(200).json({ members, fetchedAt: Date.now(), updatedAt: new Date().toISOString() });
   } catch (err) {
     return res.status(500).json({ error: "Failed to fetch members", detail: err.message });
   }
+}
+
+const MEMBER_GROUP_ID = 1002; // "Kontrast | Membros"
+
+async function getMemberGroupIds(token) {
+  const ids = new Set();
+  let page = 1;
+  const pageSize = 200;
+
+  while (true) {
+    const url = `${LOGIN_BASE}/accessExceptionRules/persons?groupId=${MEMBER_GROUP_ID}&PageSize=${pageSize}&PageNumber=${page}&Status=1&SortField=Name&SortOrder=asc`;
+    const r = await fetch(url, {
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    if (!r.ok) break;
+    const body = await r.json();
+    const persons = body?.data?.data ?? [];
+    if (persons.length === 0) break;
+    for (const p of persons) {
+      if (p.id) ids.add(p.id);
+    }
+    const totalPages = body?.data?.pages ?? 1;
+    if (page >= totalPages) break;
+    page++;
+  }
+
+  return ids;
 }
 
 function parseLogs(body) {
