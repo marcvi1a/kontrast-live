@@ -114,6 +114,12 @@ body {
   margin: 0 4px;
 }
 
+.stat-group-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* ── Grid ── */
 #members-container {
   width: 100%;
