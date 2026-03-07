@@ -62,7 +62,7 @@ async function getRecentAccess(token) {
 
   // 1) Full list without photos (supports high Quantity)
   const fullReq = fetch(
-    `${DATA_BASE}/accesslog/last?getPhotos=false&Quantity=1000`,
+    `${DATA_BASE}/accesslog/last?getPhotos=false&Quantity=9999`,
     { headers: authHdr }
   );
 
