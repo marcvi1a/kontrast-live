@@ -127,11 +127,24 @@
   }
 
   /* ── Grid ── */
+  #members-container {
+    width: 100%;
+    min-width: 0;
+  }
+
   .members-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(5, 1fr);
     gap: 2px;
     width: 100%;
+  }
+
+  @media (max-width: 900px) {
+    .members-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  @media (max-width: 700px) {
+    .members-grid { grid-template-columns: repeat(3, 1fr); }
   }
 
   /* ── Card ── */
@@ -256,7 +269,15 @@
   }
 
   .members-grid.no-photos {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(6, 1fr);
+  }
+
+  @media (max-width: 900px) {
+    .members-grid.no-photos { grid-template-columns: repeat(5, 1fr); }
+  }
+
+  @media (max-width: 700px) {
+    .members-grid.no-photos { grid-template-columns: repeat(4, 1fr); }
   }
 
   /* ── Empty state ── */
@@ -415,10 +436,23 @@
     border-color: var(--accent);
   }
 
+  /* Secondary filter buttons (historical views) */
+  .filter-btn.secondary {
+    border-style: dashed;
+  }
+
+  .filter-btn.secondary.active {
+    color: var(--text);
+    background: rgba(255,255,255,0.08);
+    border-color: var(--muted);
+    border-style: solid;
+  }
+
   /* ── Responsive ── */
   @media (max-width: 480px) {
     .page { padding: 32px 16px 60px; }
     .members-grid { grid-template-columns: repeat(2, 1fr); }
+    .members-grid.no-photos { grid-template-columns: repeat(3, 1fr); }
     .skeleton-grid { grid-template-columns: repeat(2, 1fr); }
     .stat-divider { display: none; }
   }
@@ -458,8 +492,8 @@
     <button class="filter-btn active" data-minutes="120">2 horas</button>
     <button class="filter-btn" data-minutes="240">4 horas</button>
     <button class="filter-btn" data-minutes="today">Hoje</button>
-    <button class="filter-btn" data-minutes="yesterday">Ontem</button>
-    <button class="filter-btn" data-minutes="7days">Últimos 7 dias</button>
+    <button class="filter-btn secondary" data-minutes="yesterday">Ontem</button>
+    <button class="filter-btn secondary" data-minutes="7days">Últimos 7 dias</button>
   </div>
 
   <!-- Error banner -->
