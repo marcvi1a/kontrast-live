@@ -523,12 +523,30 @@
   let prevFilter = activeFilter;
   let isFilterSwitch = false;
 
+  function deduplicateByPerson(members) {
+    const seen = new Map();
+    for (const m of members) {
+      const existing = seen.get(m.id);
+      if (!existing) {
+        seen.set(m.id, m);
+      } else {
+        // keep the most recent entry within this period
+        const tExisting = existing.entryTime ? new Date(existing.entryTime).getTime() : 0;
+        const tNew = m.entryTime ? new Date(m.entryTime).getTime() : 0;
+        if (tNew > tExisting) seen.set(m.id, m);
+      }
+    }
+    return Array.from(seen.values());
+  }
+
   function applyFilter() {
     let filtered = filterByTime(cachedMembers);
+    // Deduplicate AFTER filtering — keep most recent entry per person within the period
+    filtered = deduplicateByPerson(filtered);
     if (activeFilter === "7days") {
-      filtered = filtered.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+      filtered.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     } else {
-      filtered = filtered.slice().sort((a, b) => {
+      filtered.sort((a, b) => {
         const ta = a.entryTime ? new Date(a.entryTime).getTime() : 0;
         const tb = b.entryTime ? new Date(b.entryTime).getTime() : 0;
         return tb - ta; // most recent first
