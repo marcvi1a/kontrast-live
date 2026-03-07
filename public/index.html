@@ -131,6 +131,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 2px;
+    width: 100%;
   }
 
   /* ── Card ── */
@@ -471,7 +472,7 @@
 
   <!-- Footer -->
   <footer class="footer">
-    <span class="footer-note">Atualiza automaticamente a cada 30 segundos</span>
+    <span class="footer-note">Atualiza automaticamente a cada 1 minuto</span>
     <span id="last-update"></span>
   </footer>
 
@@ -482,7 +483,7 @@
   // CONFIG — update this URL after deploying to Vercel
   // ─────────────────────────────────────────────────────────────────────────
   const API_URL = "https://kontrast-live.vercel.app/api/live";
-  const REFRESH_INTERVAL_MS = 30_000; // 30 seconds
+  const REFRESH_INTERVAL_MS = 60_000; // 1 minute
 
   // ─────────────────────────────────────────────────────────────────────────
 
