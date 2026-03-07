@@ -30,14 +30,16 @@ export default async function handler(req, res) {
     const token = loginData?.data?.token;
     if (!token) throw new Error(`No token: ${JSON.stringify(loginData)}`);
 
-    const [members, memberIds] = await Promise.all([
+    const [members, memberIds, instrutorIds] = await Promise.all([
       getRecentAccess(token),
-      getMemberGroupIds(token),
+      getPersonIdsByGroup(token, MEMBER_GROUP_ID),
+      getPersonIdsByGroups(token, INSTRUTOR_GROUP_IDS),
     ]);
 
-    // Tag each entry with isMember based on group 1002
+    // Tag each entry with isMember / isInstrutor
     for (const m of members) {
       m.isMember = memberIds.has(m.id);
+      m.isInstrutor = instrutorIds.has(m.id);
     }
 
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
@@ -47,15 +49,16 @@ export default async function handler(req, res) {
   }
 }
 
-const MEMBER_GROUP_ID = 1002; // "Kontrast | Membros"
+const MEMBER_GROUP_ID = 1002;       // "Kontrast | Membros"
+const INSTRUTOR_GROUP_IDS = [1013, 1012]; // "Kontrast | Instrutores" + "Kontrast | Instrutores – Sábado Sound Healing"
 
-async function getMemberGroupIds(token) {
+async function getPersonIdsByGroup(token, groupId) {
   const ids = new Set();
   let page = 1;
   const pageSize = 200;
 
   while (true) {
-    const url = `${LOGIN_BASE}/accessExceptionRules/persons?groupId=${MEMBER_GROUP_ID}&PageSize=${pageSize}&PageNumber=${page}&Status=1&SortField=Name&SortOrder=asc`;
+    const url = `${LOGIN_BASE}/accessExceptionRules/persons?groupId=${groupId}&PageSize=${pageSize}&PageNumber=${page}&Status=1&SortField=Name&SortOrder=asc`;
     const r = await fetch(url, {
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
     });
@@ -72,6 +75,15 @@ async function getMemberGroupIds(token) {
   }
 
   return ids;
+}
+
+async function getPersonIdsByGroups(token, groupIds) {
+  const results = await Promise.all(groupIds.map(id => getPersonIdsByGroup(token, id)));
+  const merged = new Set();
+  for (const s of results) {
+    for (const id of s) merged.add(id);
+  }
+  return merged;
 }
 
 function parseLogs(body) {
