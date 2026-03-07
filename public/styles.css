@@ -410,9 +410,60 @@ body {
 
 /* ── Responsive ── */
 @media (max-width: 480px) {
-  .page { padding: 32px 20px 60px; }
+  .page { padding: 32px 12px 60px; }
   .members-grid { grid-template-columns: repeat(3, 1fr); }
   .members-grid.no-photos { grid-template-columns: repeat(3, 1fr); }
   .stat-divider { display: none; }
-  .filter-bar { flex-wrap: wrap; }
+
+  /* Stats bar: count + group buttons on the same line */
+  .stats-bar {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .stat { flex-shrink: 0; margin-right: 12px; }
+  .stat-value { font-size: 24px; }
+  .stat-group-filter {
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .stat-group-filter::before {
+    content: '';
+    width: 100%;
+    order: 1;
+  }
+  .group-btn {
+    font-size: 10px;
+    padding: 5px 8px;
+    order: 0;
+  }
+  .group-btn.secondary {
+    order: 2;
+  }
+
+  /* Filter bar: allow wrapping, secondary buttons drop to second line */
+  .filter-bar {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .filter-btn {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+  .filter-bar::before {
+    content: '';
+    width: 100%;
+    order: 1;
+  }
+  .filter-label {
+    order: 0;
+    margin-right: 2px;
+  }
+  .filter-btn {
+    order: 0;
+  }
+  .filter-btn.secondary {
+    order: 2;
+  }
 }
