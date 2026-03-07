@@ -42,7 +42,7 @@ async function getRecentAccess(token) {
   const authHdr = { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
 
   const r = await fetch(
-    `${DATA_BASE}/accesslog/last?getPhotos=true&pageSize=500`,
+    `${DATA_BASE}/accesslog/last?getPhotos=true&Quantity=1000`,
     { headers: authHdr }
   );
   if (!r.ok) throw new Error(`iDSecure ${r.status}: ${await r.text()}`);
