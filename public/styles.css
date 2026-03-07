@@ -432,7 +432,7 @@ body {
     gap: 10px;
   }
   .stat { flex-shrink: 0; margin-right: 12px; }
-  .stat-value { font-size: 24px; }
+  .stat-value { font-size: 32px; }
   .stat-group-filter {
     flex: 1;
     flex-wrap: wrap;
