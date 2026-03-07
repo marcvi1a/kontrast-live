@@ -444,6 +444,7 @@
     <button class="filter-btn active" data-minutes="120">2 horas</button>
     <button class="filter-btn" data-minutes="240">4 horas</button>
     <button class="filter-btn" data-minutes="today">Hoje</button>
+    <button class="filter-btn" data-minutes="yesterday">Ontem</button>
     <button class="filter-btn" data-minutes="7days">Últimos 7 dias</button>
   </div>
 
@@ -495,9 +496,9 @@
       btn.classList.add("active");
 
       const val = btn.dataset.minutes;
-      activeFilter = (val === "today" || val === "7days") ? val : parseInt(val, 10);
+      activeFilter = (val === "today" || val === "yesterday" || val === "7days") ? val : parseInt(val, 10);
 
-      const labels = { "120": "Últimas 2 horas", "240": "Últimas 4 horas", "today": "Hoje", "7days": "Últimos 7 dias" };
+      const labels = { "120": "Últimas 2 horas", "240": "Últimas 4 horas", "today": "Hoje", "yesterday": "Ontem", "7days": "Últimos 7 dias" };
       document.getElementById("filter-label-text").textContent = labels[val];
 
       // Force full redraw on filter change
@@ -530,6 +531,18 @@
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       return members.filter(m => m.entryTime && new Date(m.entryTime).getTime() >= startOfDay.getTime());
+    }
+    if (activeFilter === "yesterday") {
+      const startOfYesterday = new Date();
+      startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+      startOfYesterday.setHours(0, 0, 0, 0);
+      const endOfYesterday = new Date();
+      endOfYesterday.setHours(0, 0, 0, 0);
+      return members.filter(m => {
+        if (!m.entryTime) return false;
+        const t = new Date(m.entryTime).getTime();
+        return t >= startOfYesterday.getTime() && t < endOfYesterday.getTime();
+      });
     }
     if (activeFilter === "7days") {
       const cutoff = new Date();
