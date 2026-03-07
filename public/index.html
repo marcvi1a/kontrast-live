@@ -12,7 +12,19 @@
 </head>
 <body>
 
-<div class="page">
+<!-- Login overlay -->
+<div class="login-overlay" id="login-overlay">
+  <form class="login-form" id="login-form" autocomplete="on">
+    <div class="login-title">Kontrast</div>
+    <div class="login-subtitle">Live View</div>
+    <input class="login-input" id="login-email" type="email" name="email" placeholder="Email" autocomplete="email" />
+    <input class="login-input" id="login-password" type="password" name="password" placeholder="Senha" autocomplete="current-password" required />
+    <button class="login-btn" type="submit">Entrar</button>
+    <div class="login-error" id="login-error"></div>
+  </form>
+</div>
+
+<div class="page" id="app-page" style="display:none;">
 
   <!-- Header -->
   <header class="header">
@@ -74,8 +86,53 @@
   // ─────────────────────────────────────────────────────────────────────────
   // CONFIG — update this URL after deploying to Vercel
   // ─────────────────────────────────────────────────────────────────────────
-  const API_URL = "https://kontrast-live.vercel.app/api/live";
+  const API_BASE = "https://kontrast-live.vercel.app/api";
+  const API_URL = API_BASE + "/live";
+  const AUTH_URL = API_BASE + "/auth";
   const REFRESH_INTERVAL_MS = 60_000; // 1 minute
+  const TOKEN_KEY = "kontrast_token";
+
+  // ─── Auth ──────────────────────────────────────────────────────────────
+
+  function getToken() { return localStorage.getItem(TOKEN_KEY); }
+  function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+  function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+
+  function showLogin() {
+    document.getElementById("login-overlay").style.display = "flex";
+    document.getElementById("app-page").style.display = "none";
+  }
+
+  function showApp() {
+    document.getElementById("login-overlay").style.display = "none";
+    document.getElementById("app-page").style.display = "";
+  }
+
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById("login-error");
+    errEl.textContent = "";
+    const email = document.getElementById("login-email").value;
+    const password = document.getElementById("login-password").value;
+    try {
+      const res = await fetch(AUTH_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        errEl.textContent = body.error || "Senha incorreta";
+        return;
+      }
+      const { token } = await res.json();
+      setToken(token);
+      showApp();
+      fetchMembers();
+    } catch {
+      errEl.textContent = "Erro de conexão";
+    }
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -177,8 +234,17 @@
   }
 
   async function fetchMembers() {
+    const token = getToken();
+    if (!token) { showLogin(); return; }
     try {
-      const res = await fetch(API_URL);
+      const res = await fetch(API_URL, {
+        headers: { "Authorization": "Bearer " + token },
+      });
+      if (res.status === 401) {
+        clearToken();
+        showLogin();
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       cachedMembers = data.members ?? [];
@@ -367,7 +433,12 @@
 
   // ─── Init ────────────────────────────────────────────────────────────────
 
-  fetchMembers();
+  if (getToken()) {
+    showApp();
+    fetchMembers();
+  } else {
+    showLogin();
+  }
   setInterval(fetchMembers, REFRESH_INTERVAL_MS);
 </script>
 
