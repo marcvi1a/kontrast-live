@@ -526,6 +526,12 @@
     let filtered = filterByTime(cachedMembers);
     if (activeFilter === "7days") {
       filtered = filtered.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    } else {
+      filtered = filtered.slice().sort((a, b) => {
+        const ta = a.entryTime ? new Date(a.entryTime).getTime() : 0;
+        const tb = b.entryTime ? new Date(b.entryTime).getTime() : 0;
+        return tb - ta; // most recent first
+      });
     }
     // Force full redraw when sort order changes (to/from 7days)
     if ((activeFilter === "7days") !== (prevFilter === "7days")) {
