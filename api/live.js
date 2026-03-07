@@ -105,6 +105,21 @@ function deduplicateByPerson(logs) {
   return seen;
 }
 
+async function fetchPersonPhoto(token, personId) {
+  try {
+    const r = await fetch(`${LOGIN_BASE}/persons/${personId}`, {
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    if (!r.ok) return null;
+    const body = await r.json();
+    const photo = body?.data?.photo ?? body?.photo ?? null;
+    if (!photo) return null;
+    return photo.startsWith("data:") ? photo : `data:image/jpeg;base64,${photo}`;
+  } catch {
+    return null;
+  }
+}
+
 async function getRecentAccess(token) {
   const authHdr = { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
 
@@ -138,6 +153,27 @@ async function getRecentAccess(token) {
   }
 
   if (!fullLogs.length) return [];
+
+  // Collect unique person IDs that are missing photos
+  const uniquePersonIds = new Set();
+  for (const l of fullLogs) {
+    if (l.personId) uniquePersonIds.add(l.personId);
+  }
+  const missingPhotoIds = [...uniquePersonIds].filter(id => !photoMap.has(id));
+
+  // Fetch missing photos from /persons/{id} endpoint (in parallel, batched)
+  if (missingPhotoIds.length > 0) {
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < missingPhotoIds.length; i += BATCH_SIZE) {
+      const batch = missingPhotoIds.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(async (id) => ({ id, photo: await fetchPersonPhoto(token, id) }))
+      );
+      for (const { id, photo } of results) {
+        if (photo) photoMap.set(id, photo);
+      }
+    }
+  }
 
   // Send ALL entries — client deduplicates per filter period
   // Attach photo by personId when available
