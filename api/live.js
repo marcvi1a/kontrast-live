@@ -148,6 +148,7 @@ async function getRecentAccess(token) {
       name:      l.personName ?? "Desconhecido",
       photo:     photoMap.get(l.personId) ?? null,
       entryTime: l.time ?? null,
-      area:      l.areaName ?? l.deviceName ?? "—",
+      deviceId:  l.deviceId ?? null,
+      area:      l.deviceName ?? l.areaName ?? "—",
     }));
 }
