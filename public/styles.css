@@ -105,6 +105,7 @@ body {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .stat-divider {

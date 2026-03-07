@@ -29,7 +29,7 @@
   <div class="stats-bar">
     <div class="stat">
       <span class="stat-value" id="count">—</span>
-      <span class="stat-label" id="count-label">Membros na casa</span>
+      <span class="stat-label">Na casa</span>
     </div>
     <div class="stat-divider"></div>
     <div class="stat-group-filter">
@@ -98,14 +98,11 @@
   });
 
   // ─── Group filter buttons ─────────────────────────────────────────────────
-  const GROUP_LABELS = { members: "Membros na casa", others: "Operacional na casa", all: "Todos na casa" };
-
   document.querySelectorAll(".group-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".group-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       activeGroupFilter = btn.dataset.group;
-      document.getElementById("count-label").textContent = GROUP_LABELS[activeGroupFilter];
       applyFilter();
     });
   });
