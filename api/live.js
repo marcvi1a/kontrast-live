@@ -1,4 +1,6 @@
 // api/live.js — Vercel Serverless Function
+import { verifyToken } from "./auth.js";
+
 const LOGIN_BASE = "https://main.idsecure.com.br:5000/api/v1";
 const DATA_BASE  = "https://report.idsecure.com.br:5000/api/v1";
 const EMAIL      = process.env.IDSECURE_EMAIL;
@@ -14,7 +16,7 @@ function setCors(req, res) {
   const allowed = ALLOWED_ORIGINS.find(o => origin.startsWith(o)) ?? ALLOWED_ORIGINS[0];
   res.setHeader("Access-Control-Allow-Origin", allowed);
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Vary", "Origin");
 }
 
@@ -31,6 +33,14 @@ async function doLogin() {
 export default async function handler(req, res) {
   setCors(req, res);
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  // ── Auth check ──────────────────────────────────────────────────────────
+  const authHeader = req.headers.authorization ?? "";
+  const userToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  const user = verifyToken(userToken);
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
   try {
     const loginData = await doLogin();
