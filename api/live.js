@@ -1,7 +1,8 @@
 // api/live.js — Vercel Serverless Function
-const BASE     = "https://report.idsecure.com.br:5000/api/v1";
-const EMAIL    = process.env.IDSECURE_EMAIL;
-const PASSWORD = process.env.IDSECURE_PASSWORD;
+const LOGIN_BASE = "https://main.idsecure.com.br:5000/api/v1";
+const DATA_BASE  = "https://report.idsecure.com.br:5000/api/v1";
+const EMAIL      = process.env.IDSECURE_EMAIL;
+const PASSWORD   = process.env.IDSECURE_PASSWORD;
 
 function setCors(res) {
   const allowed = process.env.ALLOWED_ORIGIN || "https://kontrast.com.br";
@@ -11,7 +12,7 @@ function setCors(res) {
 }
 
 async function doLogin() {
-  const r = await fetch(`${BASE}/operators/login`, {
+  const r = await fetch(`${LOGIN_BASE}/operators/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
@@ -41,7 +42,7 @@ async function getRecentAccess(token) {
   const authHdr = { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
 
   const r = await fetch(
-    `${BASE}/accesslog/last?getPhotos=true&pageSize=500`,
+    `${DATA_BASE}/accesslog/last?getPhotos=true&pageSize=500`,
     { headers: authHdr }
   );
   if (!r.ok) throw new Error(`iDSecure ${r.status}: ${await r.text()}`);
