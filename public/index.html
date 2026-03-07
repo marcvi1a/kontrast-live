@@ -34,6 +34,7 @@
     <div class="stat-divider"></div>
     <div class="stat-group-filter">
       <button class="group-btn active" data-group="members">Membros</button>
+      <button class="group-btn" data-group="instrutores">Instrutores</button>
       <button class="group-btn" data-group="others">Operacional</button>
       <button class="group-btn secondary" data-group="all">Todos</button>
     </div>
@@ -134,8 +135,10 @@
     // Apply group filter
     if (activeGroupFilter === "members") {
       filtered = filtered.filter(m => m.isMember);
+    } else if (activeGroupFilter === "instrutores") {
+      filtered = filtered.filter(m => m.isInstrutor);
     } else if (activeGroupFilter === "others") {
-      filtered = filtered.filter(m => !m.isMember);
+      filtered = filtered.filter(m => !m.isMember && !m.isInstrutor);
     }
     // Deduplicate AFTER filtering — keep most recent entry per person within the period
     filtered = deduplicateByPerson(filtered);
@@ -214,7 +217,7 @@
     // Update stats
     document.getElementById("count").textContent = members.length;
 
-    const EMPTY_LABELS = { members: "Nenhum membro na casa", others: "Nenhum operacional na casa", all: "Nenhuma pessoa na casa" };
+    const EMPTY_LABELS = { members: "Nenhum membro na casa", instrutores: "Nenhum instrutor na casa", others: "Nenhum operacional na casa", all: "Nenhuma pessoa na casa" };
     if (members.length === 0) {
       container.innerHTML = `
         <div class="members-grid">
