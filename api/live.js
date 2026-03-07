@@ -4,8 +4,14 @@ const DATA_BASE  = "https://report.idsecure.com.br:5000/api/v1";
 const EMAIL      = process.env.IDSECURE_EMAIL;
 const PASSWORD   = process.env.IDSECURE_PASSWORD;
 
-function setCors(res) {
-  const allowed = process.env.ALLOWED_ORIGIN || "https://kontrast.com.br";
+const ALLOWED_ORIGINS = [
+  "https://live.kontrast.com.br",
+  "https://kontrast-live.vercel.app",
+];
+
+function setCors(req, res) {
+  const origin = req.headers.origin ?? req.headers.referer ?? "";
+  const allowed = ALLOWED_ORIGINS.find(o => origin.startsWith(o)) ?? ALLOWED_ORIGINS[0];
   res.setHeader("Access-Control-Allow-Origin", allowed);
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -22,7 +28,7 @@ async function doLogin() {
 }
 
 export default async function handler(req, res) {
-  setCors(res);
+  setCors(req, res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
