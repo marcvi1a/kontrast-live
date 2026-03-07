@@ -488,7 +488,8 @@
   // ─────────────────────────────────────────────────────────────────────────
 
   let currentIds = new Set();
-  let activeFilter = 120; // default: 2 hours (in minutes), or "today" / "7days"
+  let activeFilter = 120; // default: 2 hours (in minutes), or "today" / "yesterday" / "7days"
+  let cachedMembers = []; // cached API response for instant filter switching
 
   // ─── Filter buttons ───────────────────────────────────────────────────────
   document.querySelectorAll(".filter-btn").forEach(btn => {
@@ -502,21 +503,25 @@
       const labels = { "120": "Últimas 2 horas", "240": "Últimas 4 horas", "today": "Hoje", "yesterday": "Ontem", "7days": "Últimos 7 dias" };
       document.getElementById("filter-label-text").textContent = labels[val];
 
-      // Force full redraw on filter change
-      currentIds = new Set();
-      fetchMembers();
+      // Re-filter cached data locally — no API call, no full redraw
+      applyFilter();
     });
   });
 
   // ─── Data fetching ────────────────────────────────────────────────────────
+
+  function applyFilter() {
+    const filtered = filterByTime(cachedMembers);
+    renderMembers(filtered);
+  }
 
   async function fetchMembers() {
     try {
       const res = await fetch(API_URL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const filtered = filterByTime(data.members ?? []);
-      renderMembers(filtered);
+      cachedMembers = data.members ?? [];
+      applyFilter();
       document.getElementById("error-banner").style.display = "none";
       document.getElementById("last-update").textContent =
         "Atualizado às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
