@@ -91,27 +91,15 @@ async function getRecentAccess(token) {
 
   if (!fullLogs.length) return [];
 
-  // Deduplicate — keep only the most recent entry per person
-  const seen = deduplicateByPerson(fullLogs);
-
-  // "Yesterday or sooner" = start of yesterday onwards
-  const startOfYesterday = new Date();
-  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-  startOfYesterday.setHours(0, 0, 0, 0);
-  const yesterdayCutoff = startOfYesterday.getTime();
-
-  return Array.from(seen.values()).map(l => {
-    const entryTime = l.time ?? null;
-    const entryMs = entryTime ? new Date(entryTime).getTime() : 0;
-    // Only attach photo if the entry is from yesterday or sooner (today)
-    const photo = (entryMs >= yesterdayCutoff) ? (photoMap.get(l.personId) ?? null) : null;
-
-    return {
+  // Send ALL entries — client deduplicates per filter period
+  // Attach photo by personId when available
+  return fullLogs
+    .filter(l => l.personId)
+    .map(l => ({
       id:        l.personId,
       name:      l.personName ?? "Desconhecido",
-      photo,
-      entryTime,
+      photo:     photoMap.get(l.personId) ?? null,
+      entryTime: l.time ?? null,
       area:      l.areaName ?? l.deviceName ?? "—",
-    };
-  });
+    }));
 }
