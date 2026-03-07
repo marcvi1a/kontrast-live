@@ -114,6 +114,13 @@
   let prevGroupFilter = activeGroupFilter;
   let isFilterSwitch = false;
 
+  // Device priority: prefer entrada devices over saída
+  // 1 = Entrada Cap. Antônio Rosa, 3 = Entrada Rebouças, 4 = Entrada Rooftop, 2 = Saída Cap. Antônio Rosa
+  const DEVICE_PRIORITY = { 1: 0, 3: 1, 4: 2, 2: 3 };
+  function getDevicePriority(deviceId) {
+    return DEVICE_PRIORITY[deviceId] ?? 99;
+  }
+
   function deduplicateByPerson(members) {
     const seen = new Map();
     for (const m of members) {
@@ -121,10 +128,17 @@
       if (!existing) {
         seen.set(m.id, m);
       } else {
-        // keep the most recent entry within this period
-        const tExisting = existing.entryTime ? new Date(existing.entryTime).getTime() : 0;
-        const tNew = m.entryTime ? new Date(m.entryTime).getTime() : 0;
-        if (tNew > tExisting) seen.set(m.id, m);
+        const pExisting = getDevicePriority(existing.deviceId);
+        const pNew = getDevicePriority(m.deviceId);
+        if (pNew < pExisting) {
+          // Higher priority device wins
+          seen.set(m.id, m);
+        } else if (pNew === pExisting) {
+          // Same device priority — keep most recent
+          const tExisting = existing.entryTime ? new Date(existing.entryTime).getTime() : 0;
+          const tNew = m.entryTime ? new Date(m.entryTime).getTime() : 0;
+          if (tNew > tExisting) seen.set(m.id, m);
+        }
       }
     }
     return Array.from(seen.values());
