@@ -294,49 +294,25 @@
     letter-spacing: 0.06em;
   }
 
-  /* ── Loading skeleton ── */
-  .skeleton-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 2px;
-  }
-
-  .skeleton-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    overflow: hidden;
-  }
-
-  .skeleton-photo {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    background: linear-gradient(90deg, #282723 25%, #343129 50%, #282723 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.4s infinite;
-  }
-
-  .skeleton-info {
-    padding: 12px 14px 14px;
-    border-top: 1px solid var(--border);
+  /* ── Loading state ── */
+  .loading-state {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px;
+    width: 100%;
   }
 
-  .skeleton-line {
-    height: 12px;
-    border-radius: 2px;
-    background: linear-gradient(90deg, #282723 25%, #343129 50%, #282723 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.4s infinite;
+  .loading-text {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    animation: loadPulse 1.6s ease-in-out infinite;
   }
 
-  .skeleton-line.short { width: 60%; }
-  .skeleton-line.xshort { width: 40%; height: 10px; }
-
-  @keyframes shimmer {
-    0%   { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+  @keyframes loadPulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
   }
 
   /* ── Footer ── */
@@ -423,7 +399,6 @@
   .filter-btn.secondary {
     border-style: dashed;
     border-color: #4a4640;
-    margin-left: 10px;
   }
 
   .filter-btn.secondary.active {
@@ -435,11 +410,11 @@
 
   /* ── Responsive ── */
   @media (max-width: 480px) {
-    .page { padding: 32px 16px 60px; }
+    .page { padding: 32px 24px 60px; }
     .members-grid { grid-template-columns: repeat(3, 1fr); }
     .members-grid.no-photos { grid-template-columns: repeat(3, 1fr); }
-    .skeleton-grid { grid-template-columns: repeat(3, 1fr); }
     .stat-divider { display: none; }
+    .filter-bar { flex-wrap: wrap; }
   }
 </style>
 </head>
@@ -488,17 +463,8 @@
 
   <!-- Members grid (filled by JS) -->
   <div id="members-container">
-    <!-- Skeleton while loading -->
-    <div class="skeleton-grid" id="skeleton">
-      ${Array(6).fill(`
-        <div class="skeleton-card">
-          <div class="skeleton-photo"></div>
-          <div class="skeleton-info">
-            <div class="skeleton-line"></div>
-            <div class="skeleton-line short"></div>
-            <div class="skeleton-line xshort"></div>
-          </div>
-        </div>`).join('')}
+    <div id="loading-state" class="loading-state">
+      <span class="loading-text">Carregando dados...</span>
     </div>
   </div>
 
@@ -629,9 +595,9 @@
   function renderMembers(members) {
     const container = document.getElementById("members-container");
 
-    // Remove skeleton on first load
-    const skeleton = document.getElementById("skeleton");
-    if (skeleton) skeleton.remove();
+    // Remove loading state on first load
+    const loadingEl = document.getElementById("loading-state");
+    if (loadingEl) loadingEl.remove();
 
     // Update stats — members are sorted most-recent-first from the API
     document.getElementById("count").textContent = members.length;
