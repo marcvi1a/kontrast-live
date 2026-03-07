@@ -214,11 +214,12 @@
     // Update stats
     document.getElementById("count").textContent = members.length;
 
+    const EMPTY_LABELS = { members: "Nenhum membro na casa", others: "Nenhum operacional na casa", all: "Nenhuma pessoa na casa" };
     if (members.length === 0) {
       container.innerHTML = `
         <div class="members-grid">
           <div class="empty-state">
-            <div class="empty-title">Nenhum membro na casa</div>
+            <div class="empty-title">${EMPTY_LABELS[activeGroupFilter]}</div>
             <div class="empty-sub">Nenhuma entrada registrada no período</div>
           </div>
         </div>`;
